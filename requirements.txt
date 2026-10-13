@@ -1,0 +1,6 @@
+requests
+pytest
+pypdf
+python-docx
+python-pptx
+openpyxl

@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+test_files/
+organised_output/
+results_dryrun/
+labels.csv
