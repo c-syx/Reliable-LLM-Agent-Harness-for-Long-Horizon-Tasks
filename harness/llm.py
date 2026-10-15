@@ -67,7 +67,9 @@ class OpenRouterLLM:
         self._last_call = 0.0
 
     def chat(self, messages: list[dict], tools: list[dict]) -> LLMReply:
-        payload = {"model": self.model, "messages": messages, "tools": tools, "temperature": self.temperature}
+        payload = {"model": self.model, "messages": messages, "temperature": self.temperature}
+        if tools:  # a plain question with no tools must not send an empty tools list
+            payload["tools"] = tools
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         last_err = "unknown"
         for attempt in range(self.max_retries):

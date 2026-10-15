@@ -63,6 +63,26 @@ python organise.py --input test_files --output run2 --model qwen/qwen3.8-27b:fre
 
 It prints the accuracy and lists every wrong file. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
 
+## Using your timetable
+
+Many files never write their module code inside them, and without help those end up in Unsorted. Give the agent your timetable and it will know which modules to expect.
+
+```
+python organise.py --input test_files --output organised_output --model qwen/qwen3.8-27b:free --timetable timetable.pdf
+```
+
+The timetable can be a PDF, Word, Excel, ICS or plain text file. A screenshot will not work, because the program needs text to read. NUSMods can export an ICS file, which is the easiest option. Keep the timetable outside the input folder, otherwise it gets sorted along with everything else.
+
+What happens
+1. The model reads the timetable once and lists the modules in it. Every code it returns is checked against the timetable text, so an invented module is dropped.
+2. The list is saved to `module_registry.json`. Open it and check it looks right. This is the agent's memory of your modules.
+3. The list goes into the agent's instructions. For a file with no module code, the agent picks the most likely module from the list using the topic and the neighbouring files. It only uses Unsorted for non coursework or files that fit nothing.
+4. Next time, pass `--timetable module_registry.json` and the extraction step is skipped, which saves a request.
+
+The agent's own log now says stated or inferred for each file, so you can see which choices were written in the file and which were guessed. The run summary also shows how many files are unsorted and whether the agent made folders that are not on the timetable.
+
+Expect a trade off. Fewer files in Unsorted, but some of the ones that move will be wrong guesses. Score both with a labels file and report both numbers, a run with the timetable against a run without it is a good comparison for your report.
+
 ## What the agent can do
 
 It has six tools, which are list_dir, read_file, make_dir, move_file, write_file and finish. All paths are confined to the workspace. A move fails if the destination already exists, so the agent has to cope with name clashes. Images and videos have no readable text, so the agent only gets a note saying so and has to use file names and neighbouring files, or put them in Unsorted. This is deliberate. It is where reading and reasoning matter most.

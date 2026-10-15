@@ -177,3 +177,93 @@ def test_prompt_contains_no_hard_coded_modules():
     from harness.real import REAL_PROMPT
     for code in ["CS2030", "ESP3201", "EE2026", "MA1522", "ES2631", "PC1101", "GEC1044"]:
         assert code not in REAL_PROMPT
+
+
+# ---- timetable and module list ----------------------------------------
+from harness.real import REAL_PROMPT, build_prompt, extract_registry, save_registry  # noqa: E402
+
+
+class ExtractLLM:
+    """Plain question answerer, returns a fixed reply and remembers what it was asked."""
+
+    def __init__(self, reply):
+        self.reply, self.asked = reply, []
+
+    def chat(self, messages, tools):
+        self.asked.append((messages, tools))
+        return LLMReply(self.reply, [])
+
+
+@pytest.fixture
+def timetable(tmp_path):
+    p = tmp_path / "timetable.txt"
+    p.write_text("AB1234 Programming Methodology  Lecture Mon 10:00\nCD5678 Signals and Systems  Tutorial Tue 14:00\n"
+                 "AB1234 Programming Methodology  Lab Wed 09:00\nEF9012 Energy Systems  Lecture Thu 16:00\n")
+    return p
+
+
+def test_registry_from_model_is_checked_against_the_timetable(timetable):
+    reply = '```json\n[{"code":"AB1234","name":"Programming Methodology"},{"code":"cd 5678","name":"Signals and Systems"},' \
+            '{"code":"ZZ9999","name":"Invented"},{"code":"AB1234","name":"dup"}]\n```'
+    llm = ExtractLLM(reply)
+    reg = extract_registry(timetable, llm)
+    assert [m["code"] for m in reg["modules"]] == ["AB1234", "CD5678"]  # invented one dropped, duplicate merged
+    assert reg["method"] == "model"
+    assert llm.asked[0][1] == []  # asked as a plain question, no tools sent
+    assert "Energy Systems" in llm.asked[0][0][0]["content"]  # the timetable text reached the model
+
+
+def test_registry_falls_back_to_code_shape_when_the_answer_is_unusable(timetable):
+    reg = extract_registry(timetable, ExtractLLM("sorry I cannot do that"))
+    assert [m["code"] for m in reg["modules"]] == ["AB1234", "CD5678", "EF9012"]
+    assert "fallback" in reg["method"]
+
+
+def test_registry_save_and_reuse_costs_no_model_call(timetable, tmp_path):
+    reg = extract_registry(timetable, ExtractLLM('[{"code":"AB1234","name":"Prog"}]'))
+    saved = tmp_path / "module_registry.json"
+    save_registry(reg, saved)
+    llm = ExtractLLM("should not be used")
+    again = extract_registry(saved, llm)
+    assert again["modules"] == reg["modules"] and again["method"] == "saved registry" and llm.asked == []
+
+
+def test_image_timetable_gives_a_clear_error(tmp_path):
+    img = tmp_path / "timetable.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
+    with pytest.raises(ValueError, match="text based export"):
+        extract_registry(img, ExtractLLM("[]"))
+    with pytest.raises(FileNotFoundError):
+        extract_registry(tmp_path / "missing.pdf", ExtractLLM("[]"))
+
+
+def test_ics_timetable_is_readable(tmp_path):
+    ics = tmp_path / "tt.ics"
+    ics.write_text("BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:AB1234 Lecture\nEND:VEVENT\nEND:VCALENDAR\n")
+    reg = extract_registry(ics, ExtractLLM("not json"))
+    assert [m["code"] for m in reg["modules"]] == ["AB1234"]
+
+
+def test_prompt_with_modules_lists_only_what_was_given():
+    assert build_prompt(None) == REAL_PROMPT and build_prompt([]) == REAL_PROMPT
+    p = build_prompt([{"code": "AB1234", "name": "Programming"}, {"code": "CD5678", "name": ""}])
+    assert "- AB1234 (Programming)" in p and "- CD5678\n" in p
+    assert "EF9012" not in p
+    assert "stated" in p and "inferred" in p  # the log must say how each module was chosen
+
+
+def test_run_with_timetable_reports_unsorted_and_unlisted_folders(folder, tmp_path):
+    seen = []
+
+    class Spy(RegexLLM):
+        def chat(self, messages, tools):
+            seen.append(messages[1]["content"])
+            return super().chat(messages, tools)
+
+    mods = [{"code": "AB1234", "name": "Programming"}, {"code": "CD5678", "name": ""}]
+    s = run_organise(folder, tmp_path / "t1", Spy(sorted(TRUTH)), 100, modules=mods)
+    assert "- AB1234 (Programming)" in seen[0]  # the agent really was told about the timetable
+    assert s["timetable_modules"] == ["AB1234", "CD5678"]
+    assert s["unlisted_folders"] == ["EF9012"] and s["unsorted"] == 1
+    plain = run_organise(folder, tmp_path / "t2", RegexLLM(sorted(TRUTH)), 100)
+    assert plain["unlisted_folders"] == [] and plain["timetable_modules"] == []  # nothing to compare against

@@ -6,3 +6,5 @@ test_files/
 organised_output/
 results_dryrun/
 labels.csv
+timetable.ics
+module_registry.json

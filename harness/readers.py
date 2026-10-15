@@ -10,7 +10,7 @@ from pathlib import Path
 
 TEXT_EXT = {
     ".txt", ".md", ".csv", ".tsv", ".json", ".java", ".py", ".c", ".cpp", ".h", ".js", ".html",
-    ".htm", ".xml", ".yaml", ".yml", ".log", ".tex", ".r", ".m", ".sql",
+    ".htm", ".xml", ".yaml", ".yml", ".log", ".tex", ".r", ".m", ".sql", ".ics",
 }
 BIG = 15 * 1024 * 1024  # notebooks above this size are read as raw text, not parsed
 

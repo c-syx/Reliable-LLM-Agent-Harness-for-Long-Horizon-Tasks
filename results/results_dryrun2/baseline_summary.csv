@@ -1,0 +1,7 @@
+task_id,repeat,n_files,n_correct,n_missing,n_duplicated,n_misplaced,n_stray,file_accuracy,log_exists,log_match_frac,log_consistent_frac,finished,success,false_success,steps_used,stop_reason,n_tool_errors,n_wrong_moves,first_error_step,moves_after_first_error,total_tokens
+task1000,0,10,10,0,0,0,0,1.0,True,1.0,1.0,True,True,False,28,finish,0,0,,0,0
+task1000,1,10,9,0,0,1,0,0.9,True,1.0,0.9,True,False,True,28,finish,0,1,12,7,0
+task1001,0,10,10,0,0,0,0,1.0,True,1.0,1.0,True,True,False,27,finish,0,0,,0,0
+task1001,1,10,9,0,0,1,0,0.9,True,1.0,0.9,True,False,True,27,finish,0,1,11,7,0
+task1002,0,10,10,0,0,0,0,1.0,True,1.0,1.0,True,True,False,27,finish,0,0,,0,0
+task1002,1,10,9,0,0,1,0,0.9,True,1.0,0.9,True,False,True,27,finish,0,1,11,7,0
