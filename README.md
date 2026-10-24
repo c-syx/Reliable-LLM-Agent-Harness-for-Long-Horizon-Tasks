@@ -33,7 +33,7 @@ Right click the ESP3201A Test Files folder in Google Drive and choose Download. 
 ## Run it on real files
 
 ```
-python organise.py --input test_files --output organised_output --model qwen/qwen3.8-27b:free
+python organise.py --input test_files --output organised_output --model google/gemma-4-31b-it:free
 ```
 
 The model id comes from the model's page on OpenRouter. Check that the model supports tool calling, since the agent needs it. If it does not, the first call fails with an error and you can pick another model.
@@ -58,7 +58,7 @@ python organise.py --input test_files --make-labels labels.csv
 Open labels.csv and fill in the module column for each file, using the module code. Use Unsorted for files that are not coursework. Rows left blank are not scored. The agent never sees this file. Then run with it.
 
 ```
-python organise.py --input test_files --output run2 --model qwen/qwen3.8-27b:free --labels labels.csv
+python organise.py --input test_files --output run2 --model google/gemma-4-31b-it:free --labels labels.csv
 ```
 
 It prints the accuracy and lists every wrong file. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
@@ -68,7 +68,7 @@ It prints the accuracy and lists every wrong file. Keep labels.csv in your share
 Many files never write their module code inside them, and without help those end up in Unsorted. Give the agent your timetable and it will know which modules to expect.
 
 ```
-python organise.py --input test_files --output organised_output --model qwen/qwen3.8-27b:free --timetable timetable.pdf
+python organise.py --input test_files --output organised_output --model google/gemma-4-31b-it:free --timetable timetable.pdf
 ```
 
 The timetable can be a PDF, Word, Excel, ICS or plain text file. A screenshot will not work, because the program needs text to read. NUSMods can export an ICS file, which is the easiest option. Keep the timetable outside the input folder, otherwise it gets sorted along with everything else.
@@ -93,7 +93,7 @@ It has six tools, which are list_dir, read_file, make_dir, move_file, write_file
 
 ```
 python run_experiment.py --mock --repeats 2 --out results_dryrun
-python run_experiment.py --model qwen/qwen3.8-27b:free --n-tasks 2 --repeats 1
+python run_experiment.py --model google/gemma-4-31b-it:free --n-tasks 2 --repeats 1
 ```
 
 The first line is a dry run with no API key. Results are saved as JSON per run, with success, file accuracy, false success, wrong moves and how many moves follow the first mistake.
