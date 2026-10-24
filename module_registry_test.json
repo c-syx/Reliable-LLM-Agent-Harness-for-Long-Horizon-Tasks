@@ -1,0 +1,28 @@
+{
+  "modules": [
+    {
+      "code": "CS2030DE",
+      "name": ""
+    },
+    {
+      "code": "EE2022",
+      "name": ""
+    },
+    {
+      "code": "ES1103",
+      "name": ""
+    },
+    {
+      "code": "ESP3201A",
+      "name": ""
+    },
+    {
+      "code": "ME4226",
+      "name": ""
+    }
+  ],
+  "method": "regex-merge",
+  "files": [
+    "timetable.ics"
+  ]
+}
