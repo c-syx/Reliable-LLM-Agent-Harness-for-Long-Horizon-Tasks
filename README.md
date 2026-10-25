@@ -2,7 +2,7 @@
 
 An LLM agent that tidies a messy folder of student files. It reads each file, works out which module it belongs to, moves it into a folder for that module, and writes a log. The baseline agent is a plain tool loop with raw history. There is no verification, no checkpointing and no recovery. The improved harness will be built on top of this same loop so the two can be compared.
 
-There is nothing hard coded about modules. No module list, no topic to module mapping and no file name rules are given to the agent. It has to read the contents (PDF, Word, PowerPoint, Excel, notebooks, code and text) and decide. Your original files are never changed, because the agent works on a copy.
+By default there is nothing hard coded about modules. No module list, no topic to module mapping and no file name rules are given to the agent. The optional timetable (see below) gives it a list of module codes to expect, but it still has to read the contents of each file (PDF, Word, PowerPoint, Excel, notebooks, code and text) to decide. Your original files are never changed, because the agent works on a copy.
 
 ## Setup
 
@@ -33,15 +33,17 @@ Right click the ESP3201A Test Files folder in Google Drive and choose Download. 
 ## Run it on real files
 
 ```
-python organise.py --input test_files --output organised_output --model google/gemma-4-31b-it:free
+python organise.py --input test_files --output organised_output --model cohere/north-mini-code:free
 ```
 
 The model id comes from the model's page on OpenRouter. Check that the model supports tool calling, since the agent needs it. If it does not, the first call fails with an error and you can pick another model.
 
+Free models sometimes return 429 (too many requests) or 503 (overloaded) errors. The program waits and retries up to 10 times and keeps any work already done. If a model keeps failing, try another model and record it in MODEL_LOG.md.
+
 The output folder must be new or empty. When the run ends you get these.
 
 - `organised_output/Organised/` has the files sorted into one folder per module, plus the agent's own log.
-- `organised_output/moves_report.csv` shows where every original file ended up.
+- `organised_output/moves_report_<date>_<time>.csv` shows where every original file ended up. The name carries the time the run finished, for example `moves_report_20261025_12.20pm.csv`.
 - `organised_output/_left_behind/` holds anything the agent did not move.
 - `organised_output/_run/transcript.json` is the full record of every step, for your report.
 
@@ -58,7 +60,7 @@ python organise.py --input test_files --make-labels labels.csv
 Open labels.csv and fill in the module column for each file, using the module code. Use Unsorted for files that are not coursework. Rows left blank are not scored. The agent never sees this file. Then run with it.
 
 ```
-python organise.py --input test_files --output run2 --model google/gemma-4-31b-it:free --labels labels.csv
+python organise.py --input test_files --output run2 --model cohere/north-mini-code:free --labels labels.csv
 ```
 
 It prints the accuracy and lists every wrong file. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
@@ -68,7 +70,7 @@ It prints the accuracy and lists every wrong file. Keep labels.csv in your share
 Many files never write their module code inside them, and without help those end up in Unsorted. Give the agent your timetable and it will know which modules to expect.
 
 ```
-python organise.py --input test_files --output organised_output --model google/gemma-4-31b-it:free --timetable timetable.pdf
+python organise.py --input test_files --output organised_output --model cohere/north-mini-code:free --timetable timetable.pdf
 ```
 
 The timetable can be a PDF, Word, Excel, ICS or plain text file. A screenshot will not work, because the program needs text to read. NUSMods can export an ICS file, which is the easiest option. Keep the timetable outside the input folder, otherwise it gets sorted along with everything else.
@@ -83,6 +85,20 @@ The agent's own log now says stated or inferred for each file, so you can see wh
 
 Expect a trade off. Fewer files in Unsorted, but some of the ones that move will be wrong guesses. Score both with a labels file and report both numbers, a run with the timetable against a run without it is a good comparison for your report.
 
+To build one registry from several timetables (different semesters, any of .ics, .pdf, .txt, .docx, .xlsx), use make_registry.py. It uses a pattern match and makes no model calls.
+
+```
+python make_registry.py timetable_s1.ics timetable_s2.pdf --out module_registry.json
+```
+
+Open the result and check the codes. The pattern can pick up things that look like module codes but are not.
+
+module_registry.json and timetable files are gitignored because they can contain personal details, so they stay on your computer.
+
+## Models tried
+
+See [MODEL_LOG.md](MODEL_LOG.md) for a record of models tried, their results, and notes.
+
 ## What the agent can do
 
 It has six tools, which are list_dir, read_file, make_dir, move_file, write_file and finish. All paths are confined to the workspace. A move fails if the destination already exists, so the agent has to cope with name clashes. Images and videos have no readable text, so the agent only gets a note saying so and has to use file names and neighbouring files, or put them in Unsorted. This is deliberate. It is where reading and reasoning matter most.
@@ -93,7 +109,7 @@ It has six tools, which are list_dir, read_file, make_dir, move_file, write_file
 
 ```
 python run_experiment.py --mock --repeats 2 --out results_dryrun
-python run_experiment.py --model google/gemma-4-31b-it:free --n-tasks 2 --repeats 1
+python run_experiment.py --model cohere/north-mini-code:free --n-tasks 2 --repeats 1
 ```
 
 The first line is a dry run with no API key. Results are saved as JSON per run, with success, file accuracy, false success, wrong moves and how many moves follow the first mistake.
@@ -109,4 +125,6 @@ The first line is a dry run with no API key. Results are saved as JSON per run, 
 - harness/llm.py, the OpenRouter client with throttling and retries
 - harness/tasks.py and harness/scoring.py, the generated benchmark
 - harness/mock.py, scripted models used only by tests and the dry run
+- make_registry.py, builds a module registry from timetables without any model call
+- MODEL_LOG.md, record of the models tried
 - tests, pytest checks

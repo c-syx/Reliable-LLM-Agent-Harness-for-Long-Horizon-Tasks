@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .llm import assistant_message
+from .llm import LLMUnavailable, assistant_message
 from .sandbox import Sandbox
 from .tasks import TaskSpec
 from .tools import TOOL_SPECS, execute
@@ -18,7 +18,7 @@ SYSTEM = (
 class RunResult:
     steps: list[dict]
     finished: bool  # the agent claimed it was done, by calling finish or by replying with plain text
-    stop_reason: str  # finish, no_tool_call or max_steps
+    stop_reason: str  # finish, no_tool_call, max_steps or llm_unavailable
     n_tool_errors: int
 
 
@@ -36,7 +36,11 @@ class BaselineAgent:
         n_errors = 0
         for step in range(1, self.max_steps + 1):
             sandbox.current_step = step
-            reply = self.llm.chat(messages, TOOL_SPECS)
+            try:
+                reply = self.llm.chat(messages, TOOL_SPECS)
+            except LLMUnavailable:
+                # Keep what was done so far instead of losing the whole run. It is scored as not finished.
+                return RunResult(steps, False, "llm_unavailable", n_errors)
             messages.append(assistant_message(reply))
             rec = {"step": step, "content": reply.content, "usage": reply.usage,
                    "latency": round(reply.latency, 2), "tool_calls": []}

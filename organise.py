@@ -7,7 +7,7 @@
     python organise.py --input test_files --output organised_output --model qwen/qwen3.8-27b:free
 
 3. Run it and score it against your labels
-    python organise.py --input test_files --output organised_output --model google/gemma-4-31b-it:free --labels labels.csv
+    python organise.py --input test_files --output organised_output --model qwen/qwen3.8-27b:free --labels labels.csv
 
 The API key is read from a .env file or the OPENROUTER_API_KEY environment variable.
 Your original files are never changed. The agent works on a copy.
@@ -88,7 +88,7 @@ def main() -> None:
             print(f"    wrong  {w['file']}  expected {w['expected']}  got {w['got']}")
     print(f"\nResult is in {summary['output']}")
     print("  Organised/        the files sorted by module, plus the agent's own log")
-    print("  moves_report.csv  where every original file ended up")
+    print(f"  {summary['report_file']}  where every original file ended up")
     print("  _left_behind/     anything the agent did not move")
     print("  _run/             full transcript for your report")
 

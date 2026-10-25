@@ -133,7 +133,7 @@ def test_end_to_end_organises_into_new_folder_and_leaves_original_alone(folder, 
     assert (out / "Organised" / "AB1234" / "Main.java").is_file()
     assert (out / "Organised" / "CD5678" / "slides.pdf").is_file()
     assert (out / "Organised" / "Unsorted" / "photo.png").is_file()
-    assert (out / "moves_report.csv").is_file() and (out / "_run" / "transcript.json").is_file()
+    assert len(list(out.glob("moves_report_*.csv"))) == 1 and (out / "_run" / "transcript.json").is_file()
     assert summary["per_module"] == {"AB1234": 3, "CD5678": 2, "EF9012": 2, "Unsorted": 1}
 
 
@@ -267,3 +267,67 @@ def test_run_with_timetable_reports_unsorted_and_unlisted_folders(folder, tmp_pa
     assert s["unlisted_folders"] == ["EF9012"] and s["unsorted"] == 1
     plain = run_organise(folder, tmp_path / "t2", RegexLLM(sorted(TRUTH)), 100)
     assert plain["unlisted_folders"] == [] and plain["timetable_modules"] == []  # nothing to compare against
+
+
+# ---- busy models ------------------------------------------------------
+import harness.llm as llm_mod  # noqa: E402
+from harness.llm import LLMUnavailable, OpenRouterLLM  # noqa: E402
+
+
+class FakeResponse:
+    def __init__(self, status, body):
+        self.status_code, self._body, self.text = status, body, json.dumps(body)
+
+    def json(self):
+        return self._body
+
+
+def make_llm(monkeypatch, responses, retries=3):
+    calls = []
+
+    def fake_post(url, headers, json, timeout):
+        calls.append(json)
+        return responses[min(len(calls) - 1, len(responses) - 1)]
+
+    monkeypatch.setattr(llm_mod.requests, "post", fake_post)
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: None)
+    return OpenRouterLLM("m", api_key="k", max_retries=retries), calls
+
+
+OVERLOADED = FakeResponse(200, {"error": {"message": "Service temporarily overloaded", "code": 503}})
+OK = FakeResponse(200, {"choices": [{"message": {"content": "hi"}}], "usage": {}})
+
+
+def test_busy_model_is_retried_then_succeeds(monkeypatch):
+    llm, calls = make_llm(monkeypatch, [OVERLOADED, OVERLOADED, OK])
+    assert llm.chat([{"role": "user", "content": "x"}], []).content == "hi" and len(calls) == 3
+    assert "tools" not in calls[0]  # no empty tools list
+
+
+def test_model_that_stays_busy_raises_a_clear_error(monkeypatch):
+    llm, calls = make_llm(monkeypatch, [OVERLOADED], retries=4)
+    with pytest.raises(LLMUnavailable, match="Wait a few minutes"):
+        llm.chat([], [])
+    assert len(calls) == 4
+
+
+def test_real_problems_in_a_200_body_are_not_retried(monkeypatch):
+    llm, calls = make_llm(monkeypatch, [FakeResponse(200, {"error": {"message": "No auth credentials", "code": 401}})])
+    with pytest.raises(RuntimeError, match="No auth credentials") as e:
+        llm.chat([], [])
+    assert not isinstance(e.value, LLMUnavailable) and len(calls) == 1
+
+
+def test_run_keeps_partial_work_when_the_model_goes_away(folder, tmp_path):
+    class Dies(RegexLLM):
+        n = 0
+
+        def chat(self, messages, tools):
+            Dies.n += 1
+            if Dies.n > 7:
+                raise LLMUnavailable("busy")
+            return super().chat(messages, tools)
+
+    s = run_organise(folder, tmp_path / "partial", Dies(sorted(TRUTH)), 100)
+    assert s["stop_reason"] == "llm_unavailable"
+    assert 0 < s["left_behind"] < 8 and len(list((tmp_path / "partial").glob("moves_report_*.csv"))) == 1

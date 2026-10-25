@@ -8,3 +8,6 @@ results_dryrun/
 labels.csv
 timetable.ics
 module_registry.json
+results/**
+!results/**/
+!results/**/moves_report_*.csv

@@ -14,6 +14,7 @@ import re
 import shutil
 import tempfile
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -232,7 +233,10 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             per_module[mods[0] if mods else "MISSING"] += 1
             rows.append({"original": orig, "final_location": " | ".join(locs) or "MISSING",
                          "module_folder": ", ".join(mods) or "MISSING"})
-        with open(output_dir / "moves_report.csv", "w", newline="", encoding="utf-8") as fh:
+        # The file name carries the time the report is written, for example moves_report_20261025_12.20pm.csv
+        stamp = datetime.now().strftime("%Y%m%d_%I.%M%p").lower()
+        report_path = output_dir / f"moves_report_{stamp}.csv"
+        with open(report_path, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=["original", "final_location", "module_folder"])
             w.writeheader()
             w.writerows(rows)
@@ -252,6 +256,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             "stop_reason": result.stop_reason,
             "tool_errors": result.n_tool_errors,
             "output": str(output_dir),
+            "report_file": report_path.name,
         }
         if labels:
             summary["score"] = score_labels(labels, orig_hash, locations)

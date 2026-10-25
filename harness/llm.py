@@ -48,11 +48,18 @@ class LLMReply:
     latency: float = 0.0
 
 
+class LLMUnavailable(RuntimeError):
+    """The model stayed busy or unreachable through every retry. Waiting and trying again may work."""
+
+
+RETRY_CODES = (429, 500, 502, 503, 504)
+
+
 class OpenRouterLLM:
     URL = "https://openrouter.ai/api/v1/chat/completions"
 
     def __init__(self, model: str, api_key: str | None = None, temperature: float = 0.7,
-                 min_interval: float = 3.2, max_retries: int = 6, timeout: int = 120):
+                 min_interval: float = 3.2, max_retries: int = 10, timeout: int = 120):
         # min_interval of 3.2s keeps us under the free tier limit of 20 requests a minute.
         self.model = model
         load_dotenv()
@@ -82,19 +89,22 @@ class OpenRouterLLM:
                 r = requests.post(self.URL, headers=headers, json=payload, timeout=self.timeout)
             except requests.RequestException as e:
                 last_err = f"network error {e}"
-                time.sleep(min(60, 3 * 2 ** attempt))
+                self._backoff(attempt, last_err)
                 continue
-            if r.status_code in (429, 500, 502, 503, 504):
+            if r.status_code in RETRY_CODES:
                 last_err = f"HTTP {r.status_code}"
-                time.sleep(min(60, 3 * 2 ** attempt))
+                self._backoff(attempt, last_err)
                 continue
             if r.status_code != 200:
                 raise RuntimeError(f"OpenRouter error {r.status_code}: {r.text[:300]}")
             data = r.json()
             if "choices" not in data or not data["choices"]:
                 # OpenRouter sometimes returns 200 with an error body from the upstream provider.
-                last_err = f"bad body {str(data)[:200]}"
-                time.sleep(min(60, 3 * 2 ** attempt))
+                err = data.get("error") if isinstance(data.get("error"), dict) else {}
+                if err.get("code") not in RETRY_CODES:  # a real problem, so waiting will not help
+                    raise RuntimeError(f"OpenRouter error {err.get('code', '')}: {err.get('message', str(data)[:300])}")
+                last_err = f"{err.get('message', 'busy')}"
+                self._backoff(attempt, last_err)
                 continue
             msg = data["choices"][0]["message"]
             calls = []
@@ -105,7 +115,13 @@ class OpenRouterLLM:
                     args = json.dumps(args)
                 calls.append(ToolCall(tc.get("id") or f"call_{i}", fn.get("name", ""), args or ""))
             return LLMReply(msg.get("content") or "", calls, data.get("usage", {}), time.time() - t0)
-        raise RuntimeError(f"OpenRouter retries exhausted ({last_err})")
+        raise LLMUnavailable(f"The model stayed unavailable after {self.max_retries} tries, last problem was {last_err}. "
+                             "Free models get overloaded. Wait a few minutes and run it again, or try another model.")
+
+    def _backoff(self, attempt: int, reason: str) -> None:
+        delay = min(90, 3 * 2 ** attempt)
+        print(f"  model busy ({reason[:70]}), waiting {delay}s, try {attempt + 1} of {self.max_retries}", flush=True)
+        time.sleep(delay)
 
 
 def assistant_message(reply: LLMReply) -> dict:
