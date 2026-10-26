@@ -11,3 +11,4 @@ module_registry.json
 results/**
 !results/**/
 !results/**/moves_report_*.csv
+answer.csv
