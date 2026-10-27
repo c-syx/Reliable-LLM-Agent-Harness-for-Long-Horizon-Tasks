@@ -66,10 +66,25 @@ def main() -> None:
 
     wrong = [r for r in rows if r["result"] == "WRONG"]
     n = len(rows)
+    right = n - len(wrong)
+    total = len(moved)
     print(f"Report  {report}")
     print(f"Answers {answers_path}  ({len(answers)} labelled)")
-    print(f"\nScored {n} files, correct {n - len(wrong)}, wrong {len(wrong)}"
-          + (f", accuracy {(n - len(wrong)) / n:.0%}" if n else ""))
+    print("\n" + "=" * 50)
+    print(f"  OVERALL  {right} of {n} scored files sorted correctly"
+          + (f"  ({right / n:.0%})" if n else ""))
+    print(f"  The report has {total} files, {n} of them have an answer, {total - n} do not")
+    print(f"  Out of all {total} files in the report, {right} are confirmed correct")
+    print("=" * 50)
+    if n:
+        per = {}
+        for r in rows:
+            c = per.setdefault(r["expected"], [0, 0])
+            c[1] += 1
+            c[0] += r["result"] == "correct"
+        print("\nBy module (correct of expected)")
+        for m, (c, t) in sorted(per.items()):
+            print(f"  {m:<12} {c} of {t}")
     if wrong:
         print("\nWRONG")
         w = max(len(r["file"]) for r in wrong)
