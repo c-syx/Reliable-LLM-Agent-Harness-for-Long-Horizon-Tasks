@@ -1,0 +1,13 @@
+file,expected,got,result,final_location
+CA.pdf,ES1103,Unsorted,WRONG,Organised/Unsorted/CA.pdf
+CA1 Synthesis Prompt.pdf,ES1103,ES1103,correct,Organised/ES1103/CA1 Synthesis Prompt.pdf
+Chapter 2 Data Encapsulation v1.pdf,CS2030DE,CS2030DE,correct,Organised/CS2030DE/Chapter 2 Data Encapsulation v1.pdf
+Chapter 3 Inheritance v4.pdf,CS2030DE,CS2030DE,correct,Organised/CS2030DE/Chapter 3 Inheritance v4.pdf
+Chapter1 Intro OOP v1.pdf,CS2030DE,CS2030DE,correct,Organised/CS2030DE/Chapter1 Intro OOP v1.pdf
+Chiang Hui Zhi_A0283097U_EdgeAI.pdf,ESP3201A,unsorted,WRONG,Organised/Unsorted/Chiang Hui Zhi_A0283097U_EdgeAI.pdf
+Chiang Hui Zhi_Agentic AI.pdf,ESP3201A,unsorted,WRONG,Organised/Unsorted/Chiang Hui Zhi_Agentic AI.pdf
+Chiang Hui Zhi_search and planning.docx,ESP3201A,ESP3201A,correct,Organised/ESP3201A/Chiang Hui Zhi_search and planning.docx
+Chiang Hui Zhi_search and planning.pdf,ESP3201A,ESP3201A,correct,Organised/ESP3201A/Chiang Hui Zhi_search and planning.pdf
+L07 Notes and Examples.pdf,CS2030DE,CS2030DE,correct,Organised/CS2030DE/L07 Notes and Examples.pdf
+
+OVERALL:7/10 files sorted correctly
