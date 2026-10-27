@@ -12,3 +12,4 @@ results/**
 !results/**/
 !results/**/moves_report_*.csv
 answer.csv
+to_run_test.txt
