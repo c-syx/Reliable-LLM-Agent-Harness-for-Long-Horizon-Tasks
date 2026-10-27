@@ -32,6 +32,12 @@ def main() -> None:
     ap.add_argument("--registry-out", default="module_registry.json", help="where the module list from the timetable is saved")
     ap.add_argument("--make-labels", metavar="CSV", help="write a labels template for the input folder and stop")
     ap.add_argument("--max-steps", type=int, default=250)
+    ap.add_argument(
+        "--agent",
+        choices=["baseline", "verified"],
+        default="baseline",
+        help="Choose the original agent or action-verification harness"
+    )
     ap.add_argument("--temperature", type=float, default=0.3)
     args = ap.parse_args()
 
@@ -69,7 +75,16 @@ def main() -> None:
             if reg["method"] != "saved registry":
                 print(f"Saved to {args.registry_out}. Check it is right, then reuse it next time with "
                       f"--timetable {args.registry_out} to skip this step.\n")
-        summary = run_organise(args.input, args.output, llm, args.max_steps, labels, on_step=show, modules=modules)
+        summary = run_organise(
+            args.input,
+            args.output,
+            llm,
+            args.max_steps,
+            labels,
+            on_step=show,
+            modules=modules,
+            agent_type=args.agent
+        )
     except (RuntimeError, FileNotFoundError, FileExistsError, ValueError) as e:
         raise SystemExit(f"\nError, {e}")
 

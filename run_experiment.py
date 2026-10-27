@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 from harness.agent import BaselineAgent
+from harness.verified_agent import VerifiedAgent
 from harness.llm import OpenRouterLLM
 from harness.mock import OracleLLM
 from harness.sandbox import Sandbox
@@ -89,10 +90,20 @@ def main() -> None:
     ap.add_argument("--base-seed", type=int, default=1000)
     ap.add_argument("--out", default="results")
     ap.add_argument("--summarise-only", action="store_true")
+    ap.add_argument(
+        "--agent",
+        choices=["baseline", "verified"],
+        default="baseline"
+    )
     args = ap.parse_args()
 
     out = Path(args.out)
-    name = BaselineAgent.name
+    agent_cls = {
+        "baseline": BaselineAgent,
+        "verified": VerifiedAgent
+    }[args.agent]
+
+    name = agent_cls.name
     (out / name).mkdir(parents=True, exist_ok=True)
     if args.summarise_only:
         summarise(out, name)
@@ -109,7 +120,7 @@ def main() -> None:
             # In mock mode every odd repeat sends one file to the wrong folder, so the dry run shows failures too.
             llm = llm_real or OracleLLM(spec, wrong_move_index=2 if k % 2 else None)
             try:
-                res = run_once(BaselineAgent, llm, spec, args.max_steps)
+                res = run_once(agent_cls, llm, spec, args.max_steps)
             except RuntimeError as e:
                 print(f"{spec.task_id} r{k} skipped, {e}")
                 continue

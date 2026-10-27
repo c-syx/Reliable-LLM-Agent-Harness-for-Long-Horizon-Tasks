@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .agent import BaselineAgent
+from .verified_agent import VerifiedAgent
 from .readers import extract_text
 from .sandbox import Sandbox
 
@@ -199,7 +200,7 @@ def score_labels(labels: dict[str, str], orig_hash: dict[str, str], locations: d
 
 # ---- the run ---------------------------------------------------------
 def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict | None = None, on_step=None,
-                 modules: list[dict] | None = None) -> dict:
+                 modules: list[dict] | None = None, agent_type: str = "baseline") -> dict:
     input_dir, output_dir = Path(input_dir).resolve(), Path(output_dir).resolve()
     if not input_dir.is_dir():
         raise FileNotFoundError(f"Input folder not found, {input_dir}")
@@ -213,8 +214,24 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
         shutil.copytree(input_dir, work / "Downloads")  # the original files are never touched
         orig_hash = {p.relative_to(input_dir).as_posix(): _hash(p) for p in _files(input_dir)}
         sb = Sandbox(work)
-        result = BaselineAgent(llm, max_steps=max_steps, on_step=on_step).run(
-            SimpleNamespace(prompt=build_prompt(modules)), sb)
+        agent_classes = {
+            "baseline": BaselineAgent,
+            "verified": VerifiedAgent
+        }
+
+        if agent_type not in agent_classes:
+            raise ValueError(f"Unknown agent type: {agent_type}")
+
+        agent = agent_classes[agent_type](
+            llm,
+            max_steps=max_steps,
+            on_step=on_step
+        )
+
+        result = agent.run(
+            SimpleNamespace(prompt=build_prompt(modules)),
+            sb
+        )
         locations = _locations(work)
 
         output_dir.mkdir(parents=True, exist_ok=True)
