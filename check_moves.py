@@ -32,6 +32,19 @@ def norm(path: str) -> str:
     return path.strip().replace("\\", "/")
 
 
+def structure_of(original: str, final_location: str):
+    """True if the file kept its subfolder path inside the module folder, False if not, None if it is not in a module folder.
+    Only the folder part is compared, so a rename after a name clash still counts."""
+    want = "/".join(original.split("/")[:-1])
+    placed = [l.split("/") for l in final_location.split(" | ") if l.startswith("Organised/") and len(l.split("/")) >= 3]
+    if not placed:
+        return None, ""
+    for parts in placed:
+        if "/".join(parts[2:-1]) == want:
+            return True, want
+    return False, "Organised/" + "/".join(placed[0][1:-1])
+
+
 def main() -> None:
     if len(sys.argv) != 3:
         sys.exit(__doc__)
@@ -76,8 +89,8 @@ def main() -> None:
     print(f"  The report has {total} files, {n} of them have an answer, {total - n} do not")
     print(f"  Out of all {total} files in the report, {right} are confirmed correct")
     print("=" * 50)
+    per = {}
     if n:
-        per = {}
         for r in rows:
             c = per.setdefault(r["expected"], [0, 0])
             c[1] += 1
@@ -93,6 +106,22 @@ def main() -> None:
         print("\nMistakes by type (expected -> got)")
         for (a, b), c in Counter((r["expected"], r["got"]) for r in wrong).most_common():
             print(f"  {a} -> {b}  x{c}")
+    # folder structure, checked for every file in the report, with or without an answer
+    kept, changed = 0, []
+    for k, r in moved.items():
+        ok, got = structure_of(k, r["final_location"])
+        if ok is None:
+            continue
+        if ok:
+            kept += 1
+        else:
+            changed.append((k, "/".join(k.split("/")[:-1]) or "(top level)", got))
+    print("\n" + "-" * 50)
+    print(f"  FOLDER STRUCTURE  kept for {kept} of {kept + len(changed)} files placed in a module folder")
+    print("-" * 50)
+    for k, was, now in changed:
+        print(f"  changed  {k}\n           was in {was}, now in {now}")
+
     unscored = [k for k in moved if k not in {r["file"] for r in rows}]
     if unscored:
         print(f"\nNot scored, no answer given ({len(unscored)})")
@@ -108,6 +137,15 @@ def main() -> None:
         w = csv.DictWriter(fh, fieldnames=["file", "expected", "got", "result", "final_location"])
         w.writeheader()
         w.writerows(sorted(rows, key=lambda r: (r["result"] != "WRONG", r["file"])))
+        # A summary under the file rows. The text sits in the result column.
+        def line(label, text):
+            w.writerow({"file": label, "expected": "", "got": "", "result": text, "final_location": ""})
+        w.writerow({})
+        line("OVERALL", f"{right} of {n} scored files sorted correctly" + (f" ({right / n:.0%})" if n else ""))
+        line("FILES IN REPORT", f"{total} files, {n} with an answer, {total - n} without")
+        line("FOLDER STRUCTURE", f"kept for {kept} of {kept + len(changed)} files placed in a module folder")
+        for m, (c, t) in sorted(per.items()) if n else []:
+            line(f"BY MODULE {m}", f"{c} of {t} correct")
     print(f"\nFull comparison saved to {out}")
 
 
