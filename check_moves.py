@@ -89,8 +89,8 @@ def main() -> None:
     print(f"  The report has {total} files, {n} of them have an answer, {total - n} do not")
     print(f"  Out of all {total} files in the report, {right} are confirmed correct")
     print("=" * 50)
+    per = {}
     if n:
-        per = {}
         for r in rows:
             c = per.setdefault(r["expected"], [0, 0])
             c[1] += 1
@@ -137,6 +137,15 @@ def main() -> None:
         w = csv.DictWriter(fh, fieldnames=["file", "expected", "got", "result", "final_location"])
         w.writeheader()
         w.writerows(sorted(rows, key=lambda r: (r["result"] != "WRONG", r["file"])))
+        # A summary under the file rows. The text sits in the result column.
+        def line(label, text):
+            w.writerow({"file": label, "expected": "", "got": "", "result": text, "final_location": ""})
+        w.writerow({})
+        line("OVERALL", f"{right} of {n} scored files sorted correctly" + (f" ({right / n:.0%})" if n else ""))
+        line("FILES IN REPORT", f"{total} files, {n} with an answer, {total - n} without")
+        line("FOLDER STRUCTURE", f"kept for {kept} of {kept + len(changed)} files placed in a module folder")
+        for m, (c, t) in sorted(per.items()) if n else []:
+            line(f"BY MODULE {m}", f"{c} of {t} correct")
     print(f"\nFull comparison saved to {out}")
 
 
