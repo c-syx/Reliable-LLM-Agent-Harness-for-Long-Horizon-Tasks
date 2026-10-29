@@ -24,10 +24,12 @@ class RunResult:
 
 class BaselineAgent:
     name = "baseline"
+    tool_specs = TOOL_SPECS  # the improved agent overrides this with a longer list
 
     def __init__(self, llm, max_steps: int = 80, on_step=None):
         self.llm = llm
         self.max_steps = max_steps
+        self.allowed = {t["function"]["name"] for t in self.tool_specs}
         self.on_step = on_step  # optional callback, called with each step record for live progress
 
     def run(self, spec: TaskSpec, sandbox: Sandbox) -> RunResult:
@@ -37,7 +39,7 @@ class BaselineAgent:
         for step in range(1, self.max_steps + 1):
             sandbox.current_step = step
             try:
-                reply = self.llm.chat(messages, TOOL_SPECS)
+                reply = self.llm.chat(messages, self.tool_specs)
             except LLMUnavailable:
                 # Keep what was done so far instead of losing the whole run. It is scored as not finished.
                 return RunResult(steps, False, "llm_unavailable", n_errors)
@@ -57,7 +59,7 @@ class BaselineAgent:
                 if args is None:
                     result = "ERROR: arguments were not a valid JSON object"
                 else:
-                    result = execute(sandbox, call.name, args)
+                    result = execute(sandbox, call.name, args, self.allowed)
                 if result.startswith("ERROR"):
                     n_errors += 1
                 rec["tool_calls"].append({"name": call.name, "arguments": call.raw_arguments, "result": result})

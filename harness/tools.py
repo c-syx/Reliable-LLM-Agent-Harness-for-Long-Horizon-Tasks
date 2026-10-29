@@ -37,8 +37,24 @@ TOOL_SPECS = [
 ]
 
 
-def execute(sb: Sandbox, name: str, args: dict) -> str:
-    """Run one tool call. Bad names or arguments come back as ERROR strings."""
+# Only the improved agent gets this tool. The baseline agent does not know it exists.
+MOVE_FOLDER_SPEC = _fn("move_folder", "Move a whole folder with everything inside it, keeping its inner structure unchanged. "
+        "Fails if the destination already exists or its parent folder is missing.",
+        {"src": {**S, "description": "Existing folder path."},
+         "dst": {**S, "description": "New folder path including the folder name, for example Organised/ABC1234/Lab 5."}},
+        ["src", "dst"])
+
+IMPROVED_TOOL_SPECS = TOOL_SPECS + [MOVE_FOLDER_SPEC]
+
+
+def execute(sb: Sandbox, name: str, args: dict, allowed: set[str] | None = None) -> str:
+    """Run one tool call. Bad names or arguments come back as ERROR strings.
+
+    allowed is the set of tool names the calling agent was given. A tool outside it is refused
+    even if the model asks for it, so the baseline cannot use tools it was not offered.
+    """
+    if allowed is not None and name not in allowed:
+        return f"ERROR: unknown tool {name}"
     try:
         if name == "list_dir":
             return sb.list_dir(args.get("path", "."))
@@ -48,6 +64,8 @@ def execute(sb: Sandbox, name: str, args: dict) -> str:
             return sb.make_dir(args["path"])
         if name == "move_file":
             return sb.move_file(args["src"], args["dst"])
+        if name == "move_folder":
+            return sb.move_folder(args["src"], args["dst"])
         if name == "write_file":
             return sb.write_file(args["path"], args["content"])
         if name == "finish":
