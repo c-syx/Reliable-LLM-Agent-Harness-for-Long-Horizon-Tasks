@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .agent import BaselineAgent
+from .checkpoint import RESUME_NOTE, load_checkpoint, save_checkpoint
 from .improved import ImprovedAgent
 from .verified_agent import VerifiedAgent
 from .readers import extract_text
@@ -225,43 +226,90 @@ def score_labels(labels: dict[str, str], orig_hash: dict[str, str], locations: d
 
 
 # ---- the run ---------------------------------------------------------
+AGENT_CLASSES = {"baseline": BaselineAgent, "verified": VerifiedAgent, "improved": ImprovedAgent}
+
+
 def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict | None = None, on_step=None,
-                 modules: list[dict] | None = None, agent_type: str = "baseline") -> dict:
+                 modules: list[dict] | None = None, agent_type: str = "baseline",
+                 resume: bool = False, fresh_context: bool = False) -> dict:
     input_dir, output_dir = Path(input_dir).resolve(), Path(output_dir).resolve()
     if not input_dir.is_dir():
         raise FileNotFoundError(f"Input folder not found, {input_dir}")
     if output_dir == input_dir or input_dir in output_dir.parents:
         raise ValueError("The output folder must not be inside the input folder.")
-    if output_dir.exists() and any(output_dir.iterdir()):
-        raise FileExistsError(f"{output_dir} already has files in it. Choose a new output folder or empty this one.")
+    if agent_type not in AGENT_CLASSES:
+        raise ValueError(f"Unknown agent type: {agent_type}")
+    agent_cls = AGENT_CLASSES[agent_type]
+    checkpointing = getattr(agent_cls, "supports_checkpoint", False)
+    if (resume or fresh_context) and not checkpointing:
+        raise ValueError(f"Only the improved agent can be resumed, not the {agent_type} agent.")
+    if fresh_context and not resume:
+        raise ValueError("fresh context only applies when resuming.")
 
-    work = Path(tempfile.mkdtemp(prefix="organise_"))
+    orig_hash = {p.relative_to(input_dir).as_posix(): _hash(p) for p in _files(input_dir)}
+    ckpt_path = output_dir / "_run" / "checkpoint.json"
+    saved = None
+    if resume:
+        if not ckpt_path.is_file():
+            raise FileNotFoundError(f"Nothing to resume, there is no checkpoint at {ckpt_path}.")
+        saved = load_checkpoint(ckpt_path)
+        if saved.get("complete"):
+            raise ValueError("That run already finished. Start a new run with a new output folder.")
+        if saved["agent"] != agent_type:
+            raise ValueError(f"That run used the {saved['agent']} agent, so resume it with --agent {saved['agent']}.")
+        if saved["orig_hash"] != orig_hash:
+            raise ValueError("The input folder has changed since the run was saved, so it cannot be resumed.")
+        work = output_dir / "_run" / "work"
+        if not (work / "Downloads").is_dir():
+            raise FileNotFoundError("The saved workspace is missing, so the run cannot be resumed.")
+    else:
+        if output_dir.exists() and any(output_dir.iterdir()):
+            raise FileExistsError(f"{output_dir} already has files in it. Choose a new output folder or empty this one.")
+        # A resumable run keeps its workspace inside the output folder. The others use a throwaway folder.
+        work = output_dir / "_run" / "work" if checkpointing else Path(tempfile.mkdtemp(prefix="organise_"))
+        work.mkdir(parents=True, exist_ok=True)
+
+    complete = False
     try:
-        shutil.copytree(input_dir, work / "Downloads")  # the original files are never touched
-        orig_hash = {p.relative_to(input_dir).as_posix(): _hash(p) for p in _files(input_dir)}
+        if not resume:
+            shutil.copytree(input_dir, work / "Downloads")  # the original files are never touched
         sb = Sandbox(work)
-        agent_classes = {
-            "baseline": BaselineAgent,
-            "verified": VerifiedAgent,
-            "improved": ImprovedAgent,
-        }
+        agent = agent_cls(llm, max_steps=max_steps, on_step=on_step)
+        if saved and modules is None:
+            modules = saved.get("modules")  # the timetable is not read again on resume
+        prompt = saved["prompt"] if saved else build_prompt(modules, folders=getattr(agent, "uses_folder_rules", False))
+        model_id = str(getattr(llm, "model", "unknown"))
+        models = list(saved.get("models", [])) if saved else []
+        if model_id not in models:
+            models.append(model_id)
+        resumes = saved.get("resumes", 0) + 1 if saved else 0
 
-        if agent_type not in agent_classes:
-            raise ValueError(f"Unknown agent type: {agent_type}")
+        resume_state = None
+        if saved:
+            sb.events = saved.get("events", [])
+            history = saved["messages"][:2] if fresh_context else saved["messages"]  # first two are the system and task prompts
+            resume_state = {"messages": history + [{"role": "user", "content": RESUME_NOTE}], "steps": saved["steps"],
+                            "n_errors": saved["n_errors"], "step": saved["step"],
+                            "folder_origin": saved.get("folder_origin", {})}
+        if checkpointing:
+            def save(state: dict) -> None:
+                save_checkpoint(ckpt_path, {**state, "events": sb.events, "agent": agent_type, "models": models,
+                                            "prompt": prompt, "orig_hash": orig_hash, "complete": False, "resumes": resumes,
+                                            "modules": modules})
+            agent.checkpoint_cb = save
 
-        agent = agent_classes[agent_type](
-            llm,
-            max_steps=max_steps,
-            on_step=on_step
-        )
-
-        result = agent.run(
-            SimpleNamespace(prompt=build_prompt(modules, folders=getattr(agent, "uses_folder_rules", False))),
-            sb
-        )
+        task = SimpleNamespace(prompt=prompt)
+        result = agent.run(task, sb, resume_state) if checkpointing else agent.run(task, sb)
+        complete = result.stop_reason in ("finish", "no_tool_call")
+        if checkpointing and ckpt_path.is_file():  # record how the run ended
+            final = load_checkpoint(ckpt_path)
+            final.update({"complete": complete, "stop_reason": result.stop_reason, "stop_note": result.note})
+            save_checkpoint(ckpt_path, final)
         locations = _locations(work)
 
         output_dir.mkdir(parents=True, exist_ok=True)
+        for old in ("Organised", "_left_behind"):  # a resumed run exports its latest state again
+            shutil.rmtree(output_dir / old, ignore_errors=True)
         if (work / "Organised").is_dir():
             shutil.copytree(work / "Organised", output_dir / "Organised")
         left = work / "Downloads"
@@ -312,6 +360,10 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             "output": str(output_dir),
             "report_file": report_path.name,
             "folder_structure": structure,
+            "stop_note": result.note,
+            "resumable": checkpointing and not complete,
+            "models_used": models,
+            "resumes": resumes,
         }
         if labels:
             summary["score"] = score_labels(labels, orig_hash, locations)
@@ -321,4 +373,5 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             json.dumps({"summary": summary, "steps": result.steps, "move_events": sb.events}, indent=1))
         return summary
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        if not checkpointing or complete:  # an unfinished resumable run keeps its workspace
+            shutil.rmtree(work, ignore_errors=True)
