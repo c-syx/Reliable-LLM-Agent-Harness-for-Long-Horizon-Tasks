@@ -19,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .agent import BaselineAgent
+from .improved import ImprovedAgent
 from .verified_agent import VerifiedAgent
 from .readers import extract_text
 from .sandbox import Sandbox
@@ -54,6 +55,12 @@ Rules
 7. Do not delete files, and do not leave any file behind in Downloads.
 8. Images and videos have no readable text. Use the file name and the other files in the same folder as evidence, or move them to Organised/Unsorted.
 9. Call finish once every file is handled and you have checked your work."""
+
+# Added to the prompt of the improved agent only. The baseline prompt has no folder rule.
+FOLDER_SECTION = """
+
+Folders
+Keep the folder structure. A file that sits inside subfolders of Downloads keeps the same subfolder path inside its module folder. For example Downloads/Lab 5/starter/a.java goes to Organised/ABC1234/Lab 5/starter/a.java. Never flatten a subfolder, and never turn a subfolder into a module folder. If a whole subfolder belongs to one module, move it in one step with move_folder to Organised/<module>/<folder name>. If a subfolder holds files from different modules, recreate the same subfolder path under each module that receives files from it. Files directly in Downloads go directly into the module folder."""
 
 EXTRACT_PROMPT = """Below is the text of a student's timetable or module list. List every university module it contains.
 Reply with only a JSON array and nothing else. Each item is an object with "code" (the module code exactly as written) and "name" (the module title if it is written in the text, otherwise an empty string). Each module appears once even if it has several classes. Do not add modules that are not in the text.
@@ -128,11 +135,14 @@ def save_registry(registry: dict, path) -> None:
     Path(path).write_text(json.dumps(registry, indent=1), encoding="utf-8")
 
 
-def build_prompt(modules: list[dict] | None = None) -> str:
+def build_prompt(modules: list[dict] | None = None, folders: bool = False) -> str:
+    """folders=True adds the folder rules. Only the improved agent uses it."""
     if not modules:
-        return REAL_PROMPT
-    listing = "\n".join(f"- {m['code']}" + (f" ({m['name']})" if m.get("name") else "") for m in modules)
-    return TIMETABLE_PROMPT.format(modules=listing)
+        text = REAL_PROMPT
+    else:
+        listing = "\n".join(f"- {m['code']}" + (f" ({m['name']})" if m.get("name") else "") for m in modules)
+        text = TIMETABLE_PROMPT.format(modules=listing)
+    return text + FOLDER_SECTION if folders else text
 
 
 # ---- helpers ---------------------------------------------------------
@@ -160,6 +170,22 @@ def _module_of(loc: str) -> str:
     if parts[0] == "Organised" and len(parts) >= 3:
         return parts[1]
     return "LEFT_BEHIND" if parts[0] == "Downloads" else "OTHER"
+
+
+def folder_kept(original: str, locs: list[str]):
+    """Did the file keep its subfolder path inside the module folder?
+
+    Returns None when the file is not inside any module folder, otherwise (kept, folder_it_ended_up_in).
+    Only the folder part is compared, so a renamed file after a name clash still counts.
+    """
+    want = "/".join(original.split("/")[:-1])
+    placed = [l.split("/") for l in locs if l.startswith("Organised/") and len(l.split("/")) >= 3]
+    if not placed:
+        return None
+    for parts in placed:
+        if "/".join(parts[2:-1]) == want:
+            return True, want
+    return False, "Organised/" + "/".join(placed[0][1:-1])
 
 
 # ---- labels (optional answer key, written by hand) -------------------
@@ -216,7 +242,8 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
         sb = Sandbox(work)
         agent_classes = {
             "baseline": BaselineAgent,
-            "verified": VerifiedAgent
+            "verified": VerifiedAgent,
+            "improved": ImprovedAgent,
         }
 
         if agent_type not in agent_classes:
@@ -229,7 +256,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
         )
 
         result = agent.run(
-            SimpleNamespace(prompt=build_prompt(modules)),
+            SimpleNamespace(prompt=build_prompt(modules, folders=getattr(agent, "uses_folder_rules", False))),
             sb
         )
         locations = _locations(work)
@@ -244,8 +271,17 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             shutil.copy2(p, dest)
 
         rows, per_module = [], Counter()
+        structure = {"checked": 0, "kept": 0, "changed": []}
         for orig, h in orig_hash.items():
             locs = locations.get(h, [])
+            fk = folder_kept(orig, locs)
+            if fk is not None:
+                structure["checked"] += 1
+                if fk[0]:
+                    structure["kept"] += 1
+                else:
+                    structure["changed"].append({"file": orig, "original_folder": "/".join(orig.split("/")[:-1]) or "(top level)",
+                                                 "ended_up_in": fk[1]})
             mods = sorted({_module_of(l) for l in locs})
             per_module[mods[0] if mods else "MISSING"] += 1
             rows.append({"original": orig, "final_location": " | ".join(locs) or "MISSING",
@@ -261,6 +297,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
         listed = {m["code"].upper() for m in modules or []}
         special = {"UNSORTED", "LEFT_BEHIND", "MISSING", "OTHER"}
         summary = {
+            "agent": agent_type,
             "n_files": len(orig_hash),
             "per_module": dict(per_module.most_common()),
             "unsorted": per_module.get("Unsorted", 0),
@@ -274,6 +311,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             "tool_errors": result.n_tool_errors,
             "output": str(output_dir),
             "report_file": report_path.name,
+            "folder_structure": structure,
         }
         if labels:
             summary["score"] = score_labels(labels, orig_hash, locations)

@@ -34,9 +34,9 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=250)
     ap.add_argument(
         "--agent",
-        choices=["baseline", "verified"],
+        choices=["baseline", "verified", "improved"],
         default="baseline",
-        help="Choose the original agent or action-verification harness"
+        help="baseline is the original agent, verified adds action verification, improved adds folder handling"
     )
     ap.add_argument("--temperature", type=float, default=0.3)
     args = ap.parse_args()
@@ -89,6 +89,7 @@ def main() -> None:
         raise SystemExit(f"\nError, {e}")
 
     print("\nDone.")
+    print(f"  agent            {summary['agent']}")
     print(f"  files            {summary['n_files']}")
     print(f"  by module folder {json.dumps(summary['per_module'])}")
     print(f"  unsorted         {summary['unsorted']}")
@@ -101,6 +102,10 @@ def main() -> None:
         print(f"  accuracy         {s['n_correct']}/{s['n_labelled']} = {s['accuracy']:.0%}")
         for w in s["wrong"][:15]:
             print(f"    wrong  {w['file']}  expected {w['expected']}  got {w['got']}")
+    st = summary["folder_structure"]
+    print(f"  folder structure kept  {st['kept']} of {st['checked']} files")
+    for c in st["changed"][:15]:
+        print(f"    changed  {c['file']}  was in {c['original_folder']}, now in {c['ended_up_in']}")
     print(f"\nResult is in {summary['output']}")
     print("  Organised/        the files sorted by module, plus the agent's own log")
     print(f"  {summary['report_file']}  where every original file ended up")

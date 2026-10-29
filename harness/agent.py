@@ -32,6 +32,14 @@ class BaselineAgent:
         self.allowed = {t["function"]["name"] for t in self.tool_specs}
         self.on_step = on_step  # optional callback, called with each step record for live progress
 
+    # Hooks for the improved agent. The baseline does nothing here, so it behaves exactly as before.
+    def before_call(self, name: str, args: dict) -> str | None:
+        """Return an ERROR string to stop the call before it runs, or None to let it run."""
+        return None
+
+    def after_call(self, name: str, args: dict, result: str) -> None:
+        """Called after a tool ran. Not called when before_call stopped it."""
+
     def run(self, spec: TaskSpec, sandbox: Sandbox) -> RunResult:
         messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": spec.prompt}]
         steps: list[dict] = []
@@ -59,7 +67,12 @@ class BaselineAgent:
                 if args is None:
                     result = "ERROR: arguments were not a valid JSON object"
                 else:
-                    result = execute(sandbox, call.name, args, self.allowed)
+                    blocked = self.before_call(call.name, args)
+                    if blocked is not None:  # a check stopped the call, so it never ran
+                        result = blocked
+                    else:
+                        result = execute(sandbox, call.name, args, self.allowed)
+                        self.after_call(call.name, args, result)
                 if result.startswith("ERROR"):
                     n_errors += 1
                 rec["tool_calls"].append({"name": call.name, "arguments": call.raw_arguments, "result": result})
