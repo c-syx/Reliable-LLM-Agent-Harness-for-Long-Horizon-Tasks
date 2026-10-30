@@ -113,6 +113,22 @@ def test_folder_check_memory_survives_a_resume(folder, tmp_path):
     assert (out / "Organised" / "Old" / "Lab" / "x.txt").is_file()
 
 
+def test_verification_feedback_is_kept_across_a_resume(folder, tmp_path):
+    out = tmp_path / "out"
+    calls = [("make_dir", {"path": "Organised/M"}), move("Downloads/a.txt", "Organised/M/a.txt")]
+    first = run_organise(folder, out, ScriptLLM(calls, fail_at=2), agent_type="improved")
+    assert first["resumable"]
+
+    saved_move = next(c for step in checkpoint(out)["steps"] for c in step["tool_calls"] if c["name"] == "move_file")
+    assert saved_move["verification"]["ok"] is True and "VERIFIED:" in saved_move["result"]
+
+    summary = run_organise(folder, out, ScriptLLM([("finish", {"summary": "done"})]),
+                           agent_type="improved", resume=True)
+    assert summary["stop_reason"] == "finish"
+    resumed_move = next(c for step in checkpoint(out)["steps"] for c in step["tool_calls"] if c["name"] == "move_file")
+    assert resumed_move["verification"]["ok"] is True
+
+
 # ---- other failures ---------------------------------------------------
 def test_an_error_that_waiting_cannot_fix_is_also_saved_by_the_improved_agent(folder, tmp_path):
     err = RuntimeError("OpenRouter error 402: insufficient credits")

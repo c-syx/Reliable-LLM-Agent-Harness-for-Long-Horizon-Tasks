@@ -1,6 +1,6 @@
 # Reliable LLM agent harness for long horizon tasks (ESP3201A)
 
-An LLM agent that tidies a messy folder of student files. It reads each file, works out which module it belongs to, moves it into a folder for that module, and writes a log. The baseline agent is a plain tool loop with raw history. There is no verification, no checkpointing and no recovery. The improved harness will be built on top of this same loop so the two can be compared.
+An LLM agent that tidies a messy folder of student files. It reads each file, works out which module it belongs to, moves it into a folder for that module, and writes a log. The baseline agent is a plain tool loop with raw history. The verified agent adds deterministic action verification. The improved agent combines verification, folder structure handling and checkpointing so an interrupted run can be resumed.
 
 By default there is nothing hard coded about modules. No module list, no topic to module mapping and no file name rules are given to the agent. The optional timetable (see below) gives it a list of module codes to expect, but it still has to read the contents of each file (PDF, Word, PowerPoint, Excel, notebooks, code and text) to decide. Your original files are never changed, because the agent works on a copy.
 
@@ -101,7 +101,21 @@ See [MODEL_LOG.md](MODEL_LOG.md) for a record of models tried, their results, an
 
 ## What the agent can do
 
-It has six tools, which are list_dir, read_file, make_dir, move_file, write_file and finish. All paths are confined to the workspace. A move fails if the destination already exists, so the agent has to cope with name clashes. Images and videos have no readable text, so the agent only gets a note saying so and has to use file names and neighbouring files, or put them in Unsorted. This is deliberate. It is where reading and reasoning matter most.
+The baseline and verified agents have six tools: list_dir, read_file, make_dir, move_file, write_file and finish. The improved agent also gets move_folder. All paths are confined to the workspace. A move fails if the destination already exists, so the agent has to cope with name clashes. Images and videos have no readable text, so the agent only gets a note saying so and has to use file names and neighbouring files, or put them in Unsorted. This is deliberate. It is where reading and reasoning matter most.
+
+## Agent variants
+
+- `--agent baseline` is the plain loop with no checks or recovery.
+- `--agent verified` snapshots actions and checks that a move really happened without changing the file's content, and that make_dir and write_file left what they claimed.
+- `--agent improved` does everything the verified agent does, keeps subfolder structure with move_folder, and saves a checkpoint after every step.
+
+Use the improved agent for long real runs:
+
+```
+python organise.py --input test_files --output organised_output --model <model> --agent improved
+```
+
+If the model becomes unavailable, run the same command again with `--resume`. The workspace and conversation history are restored from `organised_output/_run/checkpoint.json`. Add `--fresh-context` to resume with a clean history and let the agent inspect the workspace instead.
 
 ## Generated benchmark for repeated experiments
 
@@ -118,7 +132,11 @@ The first line is a dry run with no API key. Results are saved as JSON per run, 
 
 - organise.py, the command line tool for real folders
 - run_experiment.py, the generated benchmark runner
-- harness/agent.py, the baseline loop
+- harness/agent.py, the shared tool loop and hooks
+- harness/verified_agent.py and harness/verifier.py, deterministic action verification
+- harness/improved.py, verification plus folder handling and checkpointing
+- harness/folder_check.py, the subfolder-structure check
+- harness/checkpoint.py, atomic save and load for resumable runs
 - harness/real.py, the real mode prompt, export and scoring
 - harness/readers.py, text extraction for each file type
 - harness/sandbox.py and harness/tools.py, the workspace and tool definitions

@@ -1,4 +1,4 @@
-"""Run the baseline agent over a fixed task set and summarise the results.
+"""Run an agent over a fixed task set and summarise the results.
 
 Dry run, no API key needed
     python run_experiment.py --mock --repeats 2
@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 from harness.agent import BaselineAgent
+from harness.improved import ImprovedAgent
 from harness.verified_agent import VerifiedAgent
 from harness.llm import OpenRouterLLM
 from harness.mock import OracleLLM
@@ -92,7 +93,7 @@ def main() -> None:
     ap.add_argument("--summarise-only", action="store_true")
     ap.add_argument(
         "--agent",
-        choices=["baseline", "verified"],
+        choices=["baseline", "verified", "improved"],
         default="baseline"
     )
     args = ap.parse_args()
@@ -100,7 +101,8 @@ def main() -> None:
     out = Path(args.out)
     agent_cls = {
         "baseline": BaselineAgent,
-        "verified": VerifiedAgent
+        "verified": VerifiedAgent,
+        "improved": ImprovedAgent,
     }[args.agent]
 
     name = agent_cls.name

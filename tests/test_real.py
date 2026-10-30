@@ -427,3 +427,34 @@ def test_baseline_cannot_use_move_folder_even_if_the_model_asks(folder, tmp_path
 def test_unknown_agent_name_is_rejected(folder, tmp_path):
     with pytest.raises(ValueError):
         run_organise(folder, tmp_path / "x", ScriptLLM([]), agent_type="nope")
+
+
+# ---- combined improved agent ------------------------------------------
+def test_improved_agent_verifies_a_move_and_keeps_checkpointing(folder, tmp_path):
+    out = tmp_path / "combined"
+    calls = [("make_dir", {"path": "Organised/AB1234"}),
+             ("move_file", {"src": "Downloads/notes.txt", "dst": "Organised/AB1234/notes.txt"}),
+             ("finish", {"summary": "done"})]
+    summary = run_organise(folder, out, ScriptLLM(calls), max_steps=20, agent_type="improved")
+
+    assert summary["agent"] == "improved" and summary["tool_errors"] == 0 and not summary["resumable"]
+    transcript = json.loads((out / "_run" / "transcript.json").read_text())
+    move_call = next(c for step in transcript["steps"] for c in step["tool_calls"] if c["name"] == "move_file")
+    assert move_call["verification"]["ok"] is True
+    assert "VERIFIED:" in move_call["result"]
+    checkpoint = json.loads((out / "_run" / "checkpoint.json").read_text())
+    assert checkpoint["complete"] is True
+
+
+def test_improved_agent_verifies_a_whole_folder_move(folder, tmp_path):
+    out = tmp_path / "combined-folder"
+    calls = [("make_dir", {"path": "Organised/AB1234"}),
+             ("move_folder", {"src": "Downloads/sub folder", "dst": "Organised/AB1234/sub folder"}),
+             ("finish", {"summary": "done"})]
+    summary = run_organise(folder, out, ScriptLLM(calls), max_steps=20, agent_type="improved")
+
+    assert summary["tool_errors"] == 0 and summary["folder_structure"]["kept"] == 1
+    transcript = json.loads((out / "_run" / "transcript.json").read_text())
+    move_call = next(c for step in transcript["steps"] for c in step["tool_calls"] if c["name"] == "move_folder")
+    assert move_call["verification"]["ok"] is True
+    assert "1 files preserved" in move_call["verification"]["detail"]

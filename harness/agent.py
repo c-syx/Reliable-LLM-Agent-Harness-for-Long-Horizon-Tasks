@@ -1,4 +1,4 @@
-"""Baseline agent. A plain tool loop with raw history, no checks, no recovery."""
+"""Shared tool loop. The baseline uses it directly; verified and improved add hooks."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,6 +23,13 @@ class RunResult:
     note: str = ""  # why the model call failed, when it did
 
 
+@dataclass
+class ToolOutcome:
+    """A tool result, optionally with verification metadata for the transcript."""
+    result: str
+    verification: dict | None = None
+
+
 class BaselineAgent:
     name = "baseline"
     tool_specs = TOOL_SPECS  # the improved agent overrides this with a longer list
@@ -36,13 +43,17 @@ class BaselineAgent:
         self.allowed = {t["function"]["name"] for t in self.tool_specs}
         self.on_step = on_step  # optional callback, called with each step record for live progress
 
-    # Hooks for the improved agent. The baseline does nothing here, so it behaves exactly as before.
-    def before_call(self, name: str, args: dict) -> str | None:
-        """Return an ERROR string to stop the call before it runs, or None to let it run."""
+    # Hooks for the improved and verified agents. The baseline does nothing here, so it behaves exactly as before.
+    def system_prompt(self) -> str:
+        """The system message that opens the conversation."""
+        return SYSTEM
+
+    def before_call(self, name: str, args: dict) -> str | ToolOutcome | None:
+        """Return an ERROR string or a ToolOutcome to stop the call before it runs, or None to let it run."""
         return None
 
-    def after_call(self, name: str, args: dict, result: str) -> None:
-        """Called after a tool ran. Not called when before_call stopped it."""
+    def after_call(self, name: str, args: dict, result: str) -> str | ToolOutcome | None:
+        """Called after a tool ran. Return a replacement result or None to keep the tool's result."""
 
     def after_step(self, step: int, messages: list, steps: list, n_errors: int) -> None:
         """Called when a step is complete, and once before the first step. The baseline does nothing."""
@@ -52,7 +63,7 @@ class BaselineAgent:
             messages, steps = resume["messages"], resume["steps"]
             n_errors, first = resume["n_errors"], resume["step"] + 1
         else:
-            messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": spec.prompt}]
+            messages = [{"role": "system", "content": self.system_prompt()}, {"role": "user", "content": spec.prompt}]
             steps, n_errors, first = [], 0, 1
         self.after_step(first - 1, messages, steps, n_errors)
         for step in range(first, self.max_steps + 1):
@@ -77,18 +88,28 @@ class BaselineAgent:
             done = False
             for call in reply.tool_calls:
                 args = call.arguments
+                verification = None
                 if args is None:
                     result = "ERROR: arguments were not a valid JSON object"
                 else:
                     blocked = self.before_call(call.name, args)
-                    if blocked is not None:  # a check stopped the call, so it never ran
+                    if isinstance(blocked, ToolOutcome):  # a check stopped the call with structured feedback
+                        result, verification = blocked.result, blocked.verification
+                    elif blocked is not None:  # a check stopped the call, so it never ran
                         result = blocked
                     else:
                         result = execute(sandbox, call.name, args, self.allowed)
-                        self.after_call(call.name, args, result)
+                        outcome = self.after_call(call.name, args, result)
+                        if isinstance(outcome, ToolOutcome):
+                            result, verification = outcome.result, outcome.verification
+                        elif outcome is not None:
+                            result = outcome
                 if result.startswith("ERROR"):
                     n_errors += 1
-                rec["tool_calls"].append({"name": call.name, "arguments": call.raw_arguments, "result": result})
+                call_record = {"name": call.name, "arguments": call.raw_arguments, "result": result}
+                if verification is not None:
+                    call_record["verification"] = verification
+                rec["tool_calls"].append(call_record)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
                 if call.name == "finish" and not result.startswith("ERROR"):
                     done = True

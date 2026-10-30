@@ -36,7 +36,7 @@ def main() -> None:
         "--agent",
         choices=["baseline", "verified", "improved"],
         default="baseline",
-        help="baseline is the original agent, verified adds action verification, improved adds folder handling"
+        help="baseline is the original agent, verified adds action verification, improved adds verification, folder handling and checkpointing"
     )
     ap.add_argument("--temperature", type=float, default=0.3)
     ap.add_argument("--resume", action="store_true",

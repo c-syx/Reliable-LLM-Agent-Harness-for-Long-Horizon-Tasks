@@ -6,8 +6,6 @@ answer key, so it cannot judge whether the LLM chose the semantically correct mo
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from .sandbox import Sandbox, sha
 
 
@@ -37,6 +35,42 @@ class ActionVerifier:
             "dst": destination.relative_to(self.sandbox.root).as_posix(),
             "source_hash": sha(source.read_bytes()),
             "source_size": source.stat().st_size,
+        }
+
+    def before_move_folder(self, src: str, dst: str) -> dict:
+        """Capture every file inside a folder before move_folder runs.
+
+        The snapshot is independent of the sandbox event log. The destination must not
+        already exist, matching Sandbox.move_folder's no-overwrite contract. Raises
+        ValueError/FileNotFoundError/FileExistsError when preconditions fail.
+        """
+        source = self.sandbox._resolve(src)
+        destination = self.sandbox._resolve(dst)
+
+        if not source.is_dir():
+            raise FileNotFoundError(f"source folder does not exist: {src}")
+        if source == self.sandbox.root or source == (self.sandbox.root / "Organised").resolve():
+            raise ValueError(f"this folder cannot be moved: {src}")
+        if destination.exists():
+            raise FileExistsError(f"destination already exists: {dst}")
+        if destination == source or source in destination.parents:
+            raise ValueError("a folder cannot be moved into itself")
+        if not destination.parent.is_dir():
+            raise FileNotFoundError(
+                f"destination folder does not exist: {destination.parent.relative_to(self.sandbox.root).as_posix()}"
+            )
+
+        files = {}
+        for f in sorted(source.rglob("*")):
+            if f.is_file():
+                files[f.relative_to(source).as_posix()] = {
+                    "source_hash": sha(f.read_bytes()),
+                    "source_size": f.stat().st_size,
+                }
+        return {
+            "src": source.relative_to(self.sandbox.root).as_posix(),
+            "dst": destination.relative_to(self.sandbox.root).as_posix(),
+            "files": files,
         }
 
     def verify_move(
@@ -78,6 +112,52 @@ class ActionVerifier:
             return False, "destination size differs from the pre-move source size"
 
         return True, f"verified: {src} -> {dst} (pre/post content hash {actual_hash})"
+
+    def verify_move_folder(
+        self,
+        src: str,
+        dst: str,
+        tool_result: str,
+        before: dict | None = None,
+    ) -> tuple[bool, str]:
+        """Return (verified, explanation) after a move_folder attempt.
+
+        Every file captured before the move must exist under the destination with the
+        same content hash and size. This checks the folder move without trusting the
+        sandbox's own event log.
+        """
+        if tool_result.startswith("ERROR"):
+            return False, f"tool reported failure: {tool_result}"
+        if before is None:
+            return False, "pre-move snapshot is missing; folder contents cannot be verified"
+
+        try:
+            source = self.sandbox._resolve(src)
+            destination = self.sandbox._resolve(dst)
+        except Exception as exc:
+            return False, f"path validation failed: {exc}"
+
+        expected_src = source.relative_to(self.sandbox.root).as_posix()
+        expected_dst = destination.relative_to(self.sandbox.root).as_posix()
+        if before.get("src") != expected_src or before.get("dst") != expected_dst:
+            return False, "the requested move paths differ from the pre-move snapshot"
+        if source.exists():
+            return False, f"source folder still exists after move: {src}"
+        if not destination.is_dir():
+            return False, f"destination folder is missing after move: {dst}"
+
+        files = before.get("files") or {}
+        for rel, expected in files.items():
+            target = destination / rel
+            if not target.is_file():
+                return False, f"file missing after folder move: {rel}"
+            actual_hash = sha(target.read_bytes())
+            if actual_hash != expected.get("source_hash"):
+                return False, f"destination content hash differs for {rel}"
+            if target.stat().st_size != expected.get("source_size"):
+                return False, f"destination size differs for {rel}"
+
+        return True, f"verified: {src} -> {dst} ({len(files)} files preserved)"
 
     def verify_file_exists(self, path: str, tool_result: str) -> tuple[bool, str]:
         """Verify that a requested write_file action left a file at its path."""

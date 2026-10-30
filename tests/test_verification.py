@@ -101,3 +101,39 @@ def test_verifier_prevents_overwrite_before_move(tmp_path):
     import pytest
     with pytest.raises(FileExistsError):
         verifier.before_move("Downloads/lecture.txt", "Organised/AB1234/lecture.txt")
+
+
+def test_verifier_checks_a_whole_folder_move(tmp_path):
+    from harness.verifier import ActionVerifier
+
+    (tmp_path / "Downloads" / "Lab" / "starter").mkdir(parents=True)
+    (tmp_path / "Downloads" / "Lab" / "notes.txt").write_text("notes")
+    (tmp_path / "Downloads" / "Lab" / "starter" / "a.java").write_text("class A {}")
+    (tmp_path / "Organised" / "AB1234").mkdir(parents=True)
+
+    sb = Sandbox(tmp_path)
+    verifier = ActionVerifier(sb)
+    snapshot = verifier.before_move_folder("Downloads/Lab", "Organised/AB1234/Lab")
+
+    (tmp_path / "Downloads" / "Lab").rename(tmp_path / "Organised" / "AB1234" / "Lab")
+    ok, detail = verifier.verify_move_folder(
+        "Downloads/Lab", "Organised/AB1234/Lab", "OK: moved", snapshot,
+    )
+    assert ok, detail
+    assert "2 files preserved" in detail
+
+    (tmp_path / "Organised" / "AB1234" / "Lab" / "notes.txt").write_text("tampered")
+    ok, detail = verifier.verify_move_folder(
+        "Downloads/Lab", "Organised/AB1234/Lab", "OK: moved", snapshot,
+    )
+    assert not ok and "hash" in detail
+
+
+def test_improved_agent_includes_verification_and_checkpointing():
+    from harness.improved import ImprovedAgent
+    from harness.verified_agent import VerifiedAgent
+    from harness.tools import IMPROVED_TOOL_SPECS
+
+    assert issubclass(ImprovedAgent, VerifiedAgent)
+    assert ImprovedAgent.supports_checkpoint
+    assert "move_folder" in [t["function"]["name"] for t in IMPROVED_TOOL_SPECS]
