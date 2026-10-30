@@ -331,3 +331,99 @@ def test_run_keeps_partial_work_when_the_model_goes_away(folder, tmp_path):
     s = run_organise(folder, tmp_path / "partial", Dies(sorted(TRUTH)), 100)
     assert s["stop_reason"] == "llm_unavailable"
     assert 0 < s["left_behind"] < 8 and len(list((tmp_path / "partial").glob("moves_report_*.csv"))) == 1
+
+
+# ---- folders ----------------------------------------------------------
+class ScriptLLM:
+    """Plays a fixed list of tool calls, then stops. For plumbing tests only."""
+
+    def __init__(self, calls):
+        self.calls, self.i = list(calls), 0
+
+    def chat(self, messages, tools):
+        if self.i >= len(self.calls):
+            return LLMReply("done", [])
+        name, args = self.calls[self.i]
+        self.i += 1
+        return LLMReply("", [ToolCall(f"c{self.i}", name, json.dumps(args))])
+
+
+def test_move_folder_keeps_inside_structure_and_records_each_file(tmp_path):
+    (tmp_path / "Downloads" / "Lab 5" / "starter").mkdir(parents=True)
+    (tmp_path / "Downloads" / "Lab 5" / "starter" / "a.java").write_text("class A {}")
+    (tmp_path / "Downloads" / "Lab 5" / "notes.txt").write_text("notes")
+    (tmp_path / "Organised" / "AB1234").mkdir(parents=True)
+    sb = Sandbox(tmp_path)
+    assert sb.move_folder("Downloads/Lab 5", "Organised/AB1234/Lab 5").startswith("OK")
+    assert (tmp_path / "Organised/AB1234/Lab 5/starter/a.java").is_file()
+    assert not (tmp_path / "Downloads" / "Lab 5").exists()
+    assert sorted(e["dst"] for e in sb.events) == ["Organised/AB1234/Lab 5/notes.txt", "Organised/AB1234/Lab 5/starter/a.java"]
+
+
+def test_move_folder_refuses_unsafe_moves(tmp_path):
+    (tmp_path / "Downloads" / "x").mkdir(parents=True)
+    (tmp_path / "Organised" / "M").mkdir(parents=True)
+    (tmp_path / "Organised" / "M" / "x").mkdir()
+    sb = Sandbox(tmp_path)
+    assert sb.move_folder("Downloads/x", "Organised/M/x").startswith("ERROR")        # destination exists
+    assert sb.move_folder("Downloads/x", "Downloads/x/inner").startswith("ERROR")    # into itself
+    assert sb.move_folder("Organised", "Downloads/Org").startswith("ERROR")          # not the Organised folder
+    assert sb.move_folder("Downloads/x", "Organised/Nope/x").startswith("ERROR")     # parent missing
+    assert sb.move_folder("Downloads/none", "Organised/M/none").startswith("ERROR")  # source missing
+    assert sb.move_folder("Downloads/x", "../x").startswith("ERROR")                 # escapes the workspace
+
+
+def test_flattening_a_subfolder_is_reported(folder, tmp_path):
+    summary = run_organise(folder, tmp_path / "flat", RegexLLM(sorted(TRUTH)), max_steps=100)
+    st = summary["folder_structure"]
+    assert st["checked"] == 8 and st["kept"] == 7
+    assert st["changed"][0]["file"] == "sub folder/Main.java"
+    assert st["changed"][0]["original_folder"] == "sub folder" and st["changed"][0]["ended_up_in"] == "Organised/AB1234"
+
+
+def test_moving_the_whole_folder_keeps_the_structure(folder, tmp_path):
+    calls = [("make_dir", {"path": "Organised/AB1234"}),
+             ("move_folder", {"src": "Downloads/sub folder", "dst": "Organised/AB1234/sub folder"}), ("finish", {"summary": "x"})]
+    summary = run_organise(folder, tmp_path / "kept", ScriptLLM(calls), max_steps=20, agent_type="improved")
+    st = summary["folder_structure"]
+    assert st["checked"] == 1 and st["kept"] == 1 and st["changed"] == []
+    assert (tmp_path / "kept/Organised/AB1234/sub folder/Main.java").is_file()
+
+
+def test_improved_agent_is_stopped_from_turning_a_subfolder_into_a_module_folder(folder, tmp_path):
+    calls = [("make_dir", {"path": "Organised"}),
+             ("move_folder", {"src": "Downloads/sub folder", "dst": "Organised/sub folder"}), ("finish", {"summary": "x"})]
+    summary = run_organise(folder, tmp_path / "wrong", ScriptLLM(calls), max_steps=20, agent_type="improved")
+    assert summary["tool_errors"] == 1 and summary["folder_structure"]["changed"] == []
+    assert (tmp_path / "wrong/_left_behind/sub folder/Main.java").is_file()  # the bad move never happened
+
+
+def test_renamed_file_after_a_name_clash_still_counts_as_kept():
+    from harness.real import folder_kept
+    assert folder_kept("Lab/a.txt", ["Organised/M/Lab/a_2.txt"]) == (True, "Lab")
+    assert folder_kept("a.txt", ["Organised/M/a.txt"]) == (True, "")
+    assert folder_kept("a.txt", ["Downloads/a.txt"]) is None
+
+
+def test_only_the_improved_agent_gets_folder_tool_and_rules():
+    from harness.tools import TOOL_SPECS, IMPROVED_TOOL_SPECS
+    names = lambda specs: [t["function"]["name"] for t in specs]
+    assert "move_folder" not in names(TOOL_SPECS) and "move_folder" in names(IMPROVED_TOOL_SPECS)
+    mods = [{"code": "AB1234", "name": ""}]
+    for baseline in (build_prompt(), build_prompt(mods)):
+        assert "move_folder" not in baseline and "Never flatten" not in baseline
+    for improved in (build_prompt(folders=True), build_prompt(mods, folders=True)):
+        assert "move_folder" in improved and "Never flatten" in improved
+
+
+def test_baseline_cannot_use_move_folder_even_if_the_model_asks(folder, tmp_path):
+    calls = [("make_dir", {"path": "Organised/AB1234"}),
+             ("move_folder", {"src": "Downloads/sub folder", "dst": "Organised/AB1234/sub folder"}), ("finish", {"summary": "x"})]
+    summary = run_organise(folder, tmp_path / "base", ScriptLLM(calls), max_steps=20)  # default agent is the baseline
+    assert summary["agent"] == "baseline" and summary["tool_errors"] == 1
+    assert (tmp_path / "base/_left_behind/sub folder/Main.java").is_file()
+
+
+def test_unknown_agent_name_is_rejected(folder, tmp_path):
+    with pytest.raises(ValueError):
+        run_organise(folder, tmp_path / "x", ScriptLLM([]), agent_type="nope")

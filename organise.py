@@ -34,11 +34,15 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=250)
     ap.add_argument(
         "--agent",
-        choices=["baseline", "verified"],
+        choices=["baseline", "verified", "improved"],
         default="baseline",
-        help="Choose the original agent or action-verification harness"
+        help="baseline is the original agent, verified adds action verification, improved adds folder handling"
     )
     ap.add_argument("--temperature", type=float, default=0.3)
+    ap.add_argument("--resume", action="store_true",
+                    help="carry on an interrupted run saved in --output (improved agent only). The timetable is not needed again")
+    ap.add_argument("--fresh-context", action="store_true",
+                    help="with --resume, start the model with a clean history and let it look at the workspace instead")
     args = ap.parse_args()
 
     if args.make_labels:
@@ -62,7 +66,7 @@ def main() -> None:
         llm = OpenRouterLLM(args.model, temperature=args.temperature)
         labels = load_labels(args.labels) if args.labels else None
         modules = None
-        if args.timetable:
+        if args.timetable and not args.resume:
             reg = extract_registry(args.timetable, llm)
             modules = reg["modules"]
             if not modules:
@@ -83,12 +87,15 @@ def main() -> None:
             labels,
             on_step=show,
             modules=modules,
-            agent_type=args.agent
+            agent_type=args.agent,
+            resume=args.resume,
+            fresh_context=args.fresh_context,
         )
     except (RuntimeError, FileNotFoundError, FileExistsError, ValueError) as e:
         raise SystemExit(f"\nError, {e}")
 
     print("\nDone.")
+    print(f"  agent            {summary['agent']}")
     print(f"  files            {summary['n_files']}")
     print(f"  by module folder {json.dumps(summary['per_module'])}")
     print(f"  unsorted         {summary['unsorted']}")
@@ -101,6 +108,15 @@ def main() -> None:
         print(f"  accuracy         {s['n_correct']}/{s['n_labelled']} = {s['accuracy']:.0%}")
         for w in s["wrong"][:15]:
             print(f"    wrong  {w['file']}  expected {w['expected']}  got {w['got']}")
+    st = summary["folder_structure"]
+    print(f"  folder structure kept  {st['kept']} of {st['checked']} files")
+    for c in st["changed"][:15]:
+        print(f"    changed  {c['file']}  was in {c['original_folder']}, now in {c['ended_up_in']}")
+    if summary["resumable"]:
+        print(f"\n  STOPPED EARLY ({summary['stop_reason']}). {summary['stop_note']}")
+        print("  Progress is saved. When the model is available again, continue with the same command plus --resume.")
+    elif summary["resumes"]:
+        print(f"  resumed {summary['resumes']} time(s), models used {summary['models_used']}")
     print(f"\nResult is in {summary['output']}")
     print("  Organised/        the files sorted by module, plus the agent's own log")
     print(f"  {summary['report_file']}  where every original file ended up")

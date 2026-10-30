@@ -91,6 +91,28 @@ class Sandbox:
         except (SandboxError, OSError) as e:
             return f"ERROR: {e}"
 
+    def move_folder(self, src: str, dst: str) -> str:
+        """Move a whole folder, with everything inside it and its inner structure unchanged."""
+        try:
+            s, d = self._resolve(src), self._resolve(dst)
+            if not s.is_dir():
+                return f"ERROR: source folder does not exist: {src}"
+            if s == self.root or s == (self.root / "Organised").resolve():
+                return f"ERROR: this folder cannot be moved: {src}"
+            if d == s or s in d.parents:
+                return "ERROR: a folder cannot be moved into itself"
+            if d.exists():
+                return f"ERROR: destination already exists, nothing was moved: {dst}"
+            if not d.parent.is_dir():
+                return f"ERROR: destination folder does not exist: {self._rel(d.parent)}"
+            inside = [(f, sha(f.read_bytes())) for f in sorted(s.rglob("*")) if f.is_file()]
+            shutil.move(str(s), str(d))
+            for f, h in inside:
+                self._record_move(h, self._rel(f), self._rel(d / f.relative_to(s)))
+            return f"OK: moved folder {self._rel(s)} to {self._rel(d)} with {len(inside)} files inside"
+        except (SandboxError, OSError) as e:
+            return f"ERROR: {e}"
+
     def write_file(self, path: str, content: str) -> str:
         try:
             p = self._resolve(path)
