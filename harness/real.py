@@ -115,7 +115,9 @@ def extract_registry(path, llm) -> dict:
     if path.suffix.lower() == ".json":
         data = json.loads(path.read_text(encoding="utf-8-sig"))
         mods = _clean_modules(data["modules"] if isinstance(data, dict) else data)
-        return {"modules": mods, "method": "saved registry", "file": path.name}
+        info = data if isinstance(data, dict) else {}
+        return {"modules": mods, "method": "saved registry", "file": path.name,
+                "source_path": info.get("source_path"), "source_hash": info.get("source_hash")}
 
     text = extract_text(path, 20000)
     if text.startswith(("NOTE", "(no ")):
@@ -129,7 +131,44 @@ def extract_registry(path, llm) -> dict:
     if not mods:
         mods = _clean_modules(sorted(set(CODE_SHAPE.findall(text))))
         method = "pattern fallback, names unknown"
-    return {"modules": mods, "method": method, "file": path.name}
+    # The fingerprint lets a later run notice that the timetable has changed.
+    return {"modules": mods, "method": method, "file": path.name,
+            "source_path": str(path.resolve()), "source_hash": _hash(path)}
+
+
+def load_or_refresh_registry(timetable, llm, registry_out) -> tuple[dict, str | None]:
+    """Return (registry, path_to_save_it_to). The second item is None when nothing needs saving.
+
+    The timetable itself is always checked first.
+    - Given a timetable file, a saved list is reused only if it was made from this exact file.
+      If the timetable changed, or there is no saved list, the list is rebuilt.
+    - Given a saved list (.json) that remembers which timetable it came from, that timetable is
+      checked too, and the list is rebuilt if the timetable has changed since.
+    - A saved list with no record of its source is used as it is.
+    """
+    path = Path(timetable)
+    if not path.is_file():
+        raise FileNotFoundError(f"Timetable file not found, {path}")
+    if path.suffix.lower() == ".json":
+        reg = extract_registry(path, llm)
+        src = Path(reg["source_path"]) if reg.get("source_path") else None
+        if src and src.is_file() and _hash(src) != reg.get("source_hash"):
+            fresh = extract_registry(src, llm)
+            fresh["method"] = f"rebuilt, {src.name} changed since this list was made"
+            return fresh, str(path)
+        return reg, None
+    here = _hash(path)
+    target = Path(registry_out)
+    if target.is_file():
+        try:
+            saved = extract_registry(target, llm)
+        except (ValueError, KeyError, json.JSONDecodeError):
+            saved = None
+        if saved and saved.get("source_hash") == here and saved["modules"]:
+            saved["method"] = "saved registry"
+            saved["reused_for"] = path.name
+            return saved, None
+    return extract_registry(path, llm), str(target)
 
 
 def save_registry(registry: dict, path) -> None:
@@ -299,48 +338,61 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             agent.checkpoint_cb = save
 
         task = SimpleNamespace(prompt=prompt)
-        result = agent.run(task, sb, resume_state) if checkpointing else agent.run(task, sb)
-        complete = result.stop_reason in ("finish", "no_tool_call")
+        result = None
+        try:
+            result = agent.run(task, sb, resume_state) if checkpointing else agent.run(task, sb)
+        finally:
+            # Export the workspace and write the moves report even if the run stopped early
+            # (Ctrl+C, model error, out of steps). The report is built from the files that
+            # really exist in the workspace, so it only records moves that actually succeeded.
+            complete = result is not None and result.stop_reason in ("finish", "no_tool_call")
+            locations = _locations(work)
+
+            output_dir.mkdir(parents=True, exist_ok=True)
+            for old in ("Organised", "_left_behind"):  # a resumed run exports its latest state again
+                shutil.rmtree(output_dir / old, ignore_errors=True)
+            if (work / "Organised").is_dir():
+                shutil.copytree(work / "Organised", output_dir / "Organised")
+            left = work / "Downloads"
+            for p in _files(left):
+                dest = output_dir / "_left_behind" / p.relative_to(left)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(p, dest)
+
+            rows, per_module = [], Counter()
+            structure = {"checked": 0, "kept": 0, "changed": []}
+            for orig, h in orig_hash.items():
+                locs = locations.get(h, [])
+                fk = folder_kept(orig, locs)
+                if fk is not None:
+                    structure["checked"] += 1
+                    if fk[0]:
+                        structure["kept"] += 1
+                    else:
+                        structure["changed"].append({"file": orig, "original_folder": "/".join(orig.split("/")[:-1]) or "(top level)",
+                                                     "ended_up_in": fk[1]})
+                mods = sorted({_module_of(l) for l in locs})
+                per_module[mods[0] if mods else "MISSING"] += 1
+                rows.append({"original": orig, "final_location": " | ".join(locs) or "MISSING",
+                             "module_folder": ", ".join(mods) or "MISSING"})
+            # The file name carries the time the report is written, for example moves_report_20261025_12.20pm.csv
+            stamp = datetime.now().strftime("%Y%m%d_%I.%M%p").lower()
+            report_path = output_dir / f"moves_report_{stamp}.csv"
+            status = "complete" if complete else "partial"
+            with open(report_path, "w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=["original", "final_location", "module_folder", "status"])
+                w.writeheader()
+                w.writerows({**r, "status": status} for r in rows)
+            if not complete:
+                if result is None:
+                    print(f"Run interrupted: partial report written to {report_path}", flush=True)
+                else:
+                    print(f"Run did not finish ({result.stop_reason}): partial report written to {report_path}", flush=True)
+
         if checkpointing and ckpt_path.is_file():  # record how the run ended
             final = load_checkpoint(ckpt_path)
             final.update({"complete": complete, "stop_reason": result.stop_reason, "stop_note": result.note})
             save_checkpoint(ckpt_path, final)
-        locations = _locations(work)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for old in ("Organised", "_left_behind"):  # a resumed run exports its latest state again
-            shutil.rmtree(output_dir / old, ignore_errors=True)
-        if (work / "Organised").is_dir():
-            shutil.copytree(work / "Organised", output_dir / "Organised")
-        left = work / "Downloads"
-        for p in _files(left):
-            dest = output_dir / "_left_behind" / p.relative_to(left)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(p, dest)
-
-        rows, per_module = [], Counter()
-        structure = {"checked": 0, "kept": 0, "changed": []}
-        for orig, h in orig_hash.items():
-            locs = locations.get(h, [])
-            fk = folder_kept(orig, locs)
-            if fk is not None:
-                structure["checked"] += 1
-                if fk[0]:
-                    structure["kept"] += 1
-                else:
-                    structure["changed"].append({"file": orig, "original_folder": "/".join(orig.split("/")[:-1]) or "(top level)",
-                                                 "ended_up_in": fk[1]})
-            mods = sorted({_module_of(l) for l in locs})
-            per_module[mods[0] if mods else "MISSING"] += 1
-            rows.append({"original": orig, "final_location": " | ".join(locs) or "MISSING",
-                         "module_folder": ", ".join(mods) or "MISSING"})
-        # The file name carries the time the report is written, for example moves_report_20261025_12.20pm.csv
-        stamp = datetime.now().strftime("%Y%m%d_%I.%M%p").lower()
-        report_path = output_dir / f"moves_report_{stamp}.csv"
-        with open(report_path, "w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=["original", "final_location", "module_folder"])
-            w.writeheader()
-            w.writerows(rows)
 
         listed = {m["code"].upper() for m in modules or []}
         special = {"UNSORTED", "LEFT_BEHIND", "MISSING", "OTHER"}
@@ -356,6 +408,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
             "missing": per_module.get("MISSING", 0),
             "steps_used": len(result.steps),
             "stop_reason": result.stop_reason,
+            "status": status,
             "tool_errors": result.n_tool_errors,
             "output": str(output_dir),
             "report_file": report_path.name,

@@ -130,6 +130,7 @@ def test_end_to_end_organises_into_new_folder_and_leaves_original_alone(folder, 
     summary = run_organise(folder, out, RegexLLM(sorted(TRUTH)), max_steps=100)
     assert sorted(p.name for p in folder.rglob("*")) == before  # original untouched
     assert summary["n_files"] == 8 and summary["left_behind"] == 0 and summary["missing"] == 0
+    assert summary["status"] == "complete"
     assert (out / "Organised" / "AB1234" / "Main.java").is_file()
     assert (out / "Organised" / "CD5678" / "slides.pdf").is_file()
     assert (out / "Organised" / "Unsorted" / "photo.png").is_file()
@@ -304,6 +305,15 @@ def test_busy_model_is_retried_then_succeeds(monkeypatch):
     assert "tools" not in calls[0]  # no empty tools list
 
 
+def test_backoff_is_capped_at_60_seconds(monkeypatch):
+    waits = []
+    monkeypatch.setattr(llm_mod.time, "sleep", lambda s: waits.append(s))
+    llm = OpenRouterLLM("m", api_key="k")
+    for attempt in range(10):
+        llm._backoff(attempt, "busy")
+    assert waits[:6] == [3, 6, 12, 24, 48, 60] and max(waits) == 60
+
+
 def test_model_that_stays_busy_raises_a_clear_error(monkeypatch):
     llm, calls = make_llm(monkeypatch, [OVERLOADED], retries=4)
     with pytest.raises(LLMUnavailable, match="Wait a few minutes"):
@@ -330,7 +340,33 @@ def test_run_keeps_partial_work_when_the_model_goes_away(folder, tmp_path):
 
     s = run_organise(folder, tmp_path / "partial", Dies(sorted(TRUTH)), 100)
     assert s["stop_reason"] == "llm_unavailable"
+    assert s["status"] == "partial"
     assert 0 < s["left_behind"] < 8 and len(list((tmp_path / "partial").glob("moves_report_*.csv"))) == 1
+
+
+def test_interrupted_run_writes_a_partial_report_and_re_raises(folder, tmp_path):
+    class Interrupted(RegexLLM):
+        n = 0
+
+        def chat(self, messages, tools):
+            Interrupted.n += 1
+            if Interrupted.n > 5:  # the first move has completed, the second file is not handled yet
+                raise KeyboardInterrupt
+            return super().chat(messages, tools)
+
+    out = tmp_path / "interrupted"
+    with pytest.raises(KeyboardInterrupt):  # the error is not swallowed
+        run_organise(folder, out, Interrupted(sorted(TRUTH)), 100)
+
+    reports = list(out.glob("moves_report_*.csv"))
+    assert len(reports) == 1
+    with open(reports[0], newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert len(rows) == 8 and {r["status"] for r in rows} == {"partial"}
+    # only the move that really completed is reported outside Downloads, and it was exported
+    placed = [r for r in rows if r["final_location"].startswith("Organised/")]
+    assert len(placed) == 1 and (out / placed[0]["final_location"]).is_file()
+    assert sum(r["final_location"].startswith("Downloads/") for r in rows) == 7
 
 
 # ---- folders ----------------------------------------------------------

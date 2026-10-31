@@ -18,7 +18,7 @@ import argparse
 import json
 
 from harness.llm import OpenRouterLLM
-from harness.real import extract_registry, load_labels, make_labels_template, run_organise, save_registry
+from harness.real import load_labels, load_or_refresh_registry, make_labels_template, run_organise, save_registry
 
 
 def main() -> None:
@@ -67,18 +67,18 @@ def main() -> None:
         labels = load_labels(args.labels) if args.labels else None
         modules = None
         if args.timetable and not args.resume:
-            reg = extract_registry(args.timetable, llm)
+            reg, save_to = load_or_refresh_registry(args.timetable, llm, args.registry_out)
             modules = reg["modules"]
             if not modules:
                 raise ValueError("No module codes were found in the timetable.")
-            if reg["method"] != "saved registry":
-                save_registry(reg, args.registry_out)
+            if save_to:
+                save_registry(reg, save_to)
             print(f"Timetable read ({reg['method']}), {len(modules)} modules")
             for m in modules:
                 print(f"  {m['code']}  {m['name']}")
-            if reg["method"] != "saved registry":
-                print(f"Saved to {args.registry_out}. Check it is right, then reuse it next time with "
-                      f"--timetable {args.registry_out} to skip this step.\n")
+            if save_to:
+                print(f"Saved to {save_to}. Check it is right. Next time, pass the timetable file again: the saved list is "
+                      f"reused if the timetable is unchanged and rebuilt if it changed.\n")
         summary = run_organise(
             args.input,
             args.output,

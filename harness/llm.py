@@ -120,6 +120,7 @@ class OpenRouterLLM:
 
     def _backoff(self, attempt: int, reason: str) -> None:
         delay = min(90, 3 * 2 ** attempt)
+        delay = min(delay, 60)
         print(f"  model busy ({reason[:70]}), waiting {delay}s, try {attempt + 1} of {self.max_retries}", flush=True)
         time.sleep(delay)
 
