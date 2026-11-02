@@ -13,7 +13,10 @@ from harness.sandbox import Sandbox
 
 
 def move(src, dst, kind="move_file"):
-    return kind, {"src": src, "dst": dst}
+    args = {"src": src, "dst": dst}
+    if kind == "move_file":  # the improved agent wants a phrase from the file with every move
+        args["evidence"] = f"content of the file {src.split('/')[-1]}"
+    return kind, args
 
 
 # ---- the check on its own --------------------------------------------
@@ -80,7 +83,7 @@ class ScriptLLM:
 
 def workspace(tmp_path):
     (tmp_path / "Downloads" / "Lab 5").mkdir(parents=True)
-    (tmp_path / "Downloads" / "Lab 5" / "a.java").write_text("class A {}")
+    (tmp_path / "Downloads" / "Lab 5" / "a.java").write_text("content of the file a.java")
     (tmp_path / "Organised" / "CS2030DE").mkdir(parents=True)
     return Sandbox(tmp_path)
 

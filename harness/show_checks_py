@@ -1,0 +1,33 @@
+"""List what the improved agent's checks did in a run.
+
+    python show_checks.py <run folder>
+
+Reads <run folder>/_run/transcript.json. Shows every move the evidence gate or the sibling check sent
+back, what the agent did next, and how many moves came with an evidence phrase.
+"""
+import json
+import sys
+from pathlib import Path
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit(__doc__)
+    path = Path(sys.argv[1]) / "_run" / "transcript.json"
+    if not path.is_file():
+        raise SystemExit(f"No transcript at {path}")
+    steps = json.loads(path.read_text(encoding="utf-8"))["steps"]
+    calls = [(s["step"], c) for s in steps for c in s["tool_calls"]]
+    moves = [(n, c) for n, c in calls if c["name"] == "move_file"]
+    with_ev = sum('"evidence"' in c["arguments"] for _, c in moves)
+    print(f"{len(moves)} move_file calls, {with_ev} came with an evidence phrase\n")
+    for kind in ("evidence check", "sibling check"):
+        hits = [(n, c) for n, c in calls if kind in c["result"]]
+        print(f"=== {kind}: {len(hits)} moves sent back")
+        for n, c in hits:
+            print(f"  step {n}  {c['arguments'][:140]}\n      -> {c['result'][:230]}")
+        print()
+
+
+if __name__ == "__main__":
+    main()

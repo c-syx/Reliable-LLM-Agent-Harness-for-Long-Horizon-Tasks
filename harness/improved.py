@@ -7,6 +7,9 @@ check is returned as a tool error so the model can correct it.
 Folder handling adds the move_folder tool, the folder rules in the prompt, and a check
 that stops any move that would flatten a subfolder before it happens.
 
+The evidence gate wants a phrase copied from the file with every move into a module folder, and checks
+that the phrase is really in the file and agrees with the folder. See evidence_check.py.
+
 The sibling check compares a file with the files already sorted into each module folder. If it
 looks much more like another module's files than the one the agent chose, the move is sent back
 once for a second look. See sibling_check.py.
@@ -18,6 +21,7 @@ The baseline agent gets none of these.
 from __future__ import annotations
 
 from .agent import ToolOutcome
+from .evidence_check import EvidenceCheck, evidence_specs
 from .folder_check import FolderCheck
 from .sibling_check import SiblingCheck
 from .tools import IMPROVED_TOOL_SPECS
@@ -26,7 +30,7 @@ from .verified_agent import VerifiedAgent
 
 class ImprovedAgent(VerifiedAgent):
     name = "improved"
-    tool_specs = IMPROVED_TOOL_SPECS
+    tool_specs = evidence_specs(IMPROVED_TOOL_SPECS)  # move_file also takes an evidence argument
     uses_folder_rules = True  # real.build_prompt adds the folder section for this agent
     supports_checkpoint = True
     stop_on = (RuntimeError,)  # includes LLMUnavailable, and also errors that waiting cannot fix, such as no credit
@@ -36,6 +40,8 @@ class ImprovedAgent(VerifiedAgent):
         if resume:
             self.folder_check.origin = dict(resume.get("folder_origin", {}))
         # It rebuilds what it knows from the workspace, so a resumed run needs no saved state for it.
+        self.evidence = EvidenceCheck(sandbox)
+        self.evidence_log = self.evidence.evidence_log
         self.sibling = SiblingCheck(sandbox)
         self.sibling_log = self.sibling.sibling_log
         return super().run(spec, sandbox, resume)
@@ -44,9 +50,13 @@ class ImprovedAgent(VerifiedAgent):
         blocked = self.folder_check.check(name, args)
         if blocked is not None:  # the folder check runs before the action is executed
             return blocked
-        blocked = self.sibling.check(name, args)
-        if blocked is not None:  # sent back once for a second look
+        blocked = self.evidence.check(name, args)
+        if blocked is not None:  # the file must come with a phrase that really is in it
             return blocked
+        if self.evidence.last != "stated code":  # a file that states its own module code is not second-guessed
+            blocked = self.sibling.check(name, args)
+            if blocked is not None:  # sent back once for a second look
+                return blocked
         return super().before_call(name, args)
 
     def after_call(self, name: str, args: dict, result: str) -> str | ToolOutcome | None:

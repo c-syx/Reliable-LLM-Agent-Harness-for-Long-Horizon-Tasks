@@ -469,7 +469,8 @@ def test_unknown_agent_name_is_rejected(folder, tmp_path):
 def test_improved_agent_verifies_a_move_and_keeps_checkpointing(folder, tmp_path):
     out = tmp_path / "combined"
     calls = [("make_dir", {"path": "Organised/AB1234"}),
-             ("move_file", {"src": "Downloads/notes.txt", "dst": "Organised/AB1234/notes.txt"}),
+             ("move_file", {"src": "Downloads/notes.txt", "dst": "Organised/AB1234/notes.txt",
+                            "evidence": "Lecture 3 of AB1234"}),
              ("finish", {"summary": "done"})]
     summary = run_organise(folder, out, ScriptLLM(calls), max_steps=20, agent_type="improved")
 

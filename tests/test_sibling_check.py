@@ -110,4 +110,6 @@ def test_only_the_improved_agent_has_it(tmp_path):
     a = ImprovedAgent(None)
     a.folder_check = __import__("harness.folder_check", fromlist=["FolderCheck"]).FolderCheck()
     a.sibling = SiblingCheck(sb)
+    a.evidence = __import__("harness.evidence_check", fromlist=["EvidenceCheck"]).EvidenceCheck(sb)
+    a.evidence.max_blocks = 0  # let the evidence gate step aside so only the sibling check is tested here
     assert a.before_call(*move(None, "ME2121", "n.txt")).startswith("ERROR: sibling check")

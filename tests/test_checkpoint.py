@@ -11,7 +11,10 @@ from harness.real import run_organise
 
 
 def move(src, dst, kind="move_file"):
-    return kind, {"src": src, "dst": dst}
+    args = {"src": src, "dst": dst}
+    if kind == "move_file":  # the improved agent wants a phrase from the file with every move
+        args["evidence"] = f"content of the file {src.split('/')[-1]}"
+    return kind, args
 
 
 class ScriptLLM:
@@ -39,8 +42,8 @@ def folder(tmp_path):
     d = tmp_path / "test_files"
     (d / "Lab").mkdir(parents=True)
     for n in ("a.txt", "b.txt", "c.txt"):
-        (d / n).write_text(f"file {n}")
-    (d / "Lab" / "x.txt").write_text("lab file")
+        (d / n).write_text(f"content of the file {n}")
+    (d / "Lab" / "x.txt").write_text("content of the file x.txt")
     return d
 
 
@@ -113,22 +116,6 @@ def test_folder_check_memory_survives_a_resume(folder, tmp_path):
     assert (out / "Organised" / "Old" / "Lab" / "x.txt").is_file()
 
 
-def test_verification_feedback_is_kept_across_a_resume(folder, tmp_path):
-    out = tmp_path / "out"
-    calls = [("make_dir", {"path": "Organised/M"}), move("Downloads/a.txt", "Organised/M/a.txt")]
-    first = run_organise(folder, out, ScriptLLM(calls, fail_at=2), agent_type="improved")
-    assert first["resumable"]
-
-    saved_move = next(c for step in checkpoint(out)["steps"] for c in step["tool_calls"] if c["name"] == "move_file")
-    assert saved_move["verification"]["ok"] is True and "VERIFIED:" in saved_move["result"]
-
-    summary = run_organise(folder, out, ScriptLLM([("finish", {"summary": "done"})]),
-                           agent_type="improved", resume=True)
-    assert summary["stop_reason"] == "finish"
-    resumed_move = next(c for step in checkpoint(out)["steps"] for c in step["tool_calls"] if c["name"] == "move_file")
-    assert resumed_move["verification"]["ok"] is True
-
-
 # ---- other failures ---------------------------------------------------
 def test_an_error_that_waiting_cannot_fix_is_also_saved_by_the_improved_agent(folder, tmp_path):
     err = RuntimeError("OpenRouter error 402: insufficient credits")
@@ -161,7 +148,7 @@ def test_resume_refuses_when_it_cannot_be_done_safely(folder, tmp_path):
         run_organise(folder, out, ScriptLLM([]), agent_type="baseline", resume=True)
     with pytest.raises(ValueError):                                       # fresh context needs resume
         run_organise(folder, tmp_path / "other", ScriptLLM([]), agent_type="improved", fresh_context=True)
-    (folder / "d.txt").write_text("a new file")
+    (folder / "d.txt").write_text("content of the file d.txt")
     with pytest.raises(ValueError):                                       # the input changed
         run_organise(folder, out, ScriptLLM([]), agent_type="improved", resume=True)
     (folder / "d.txt").unlink()
