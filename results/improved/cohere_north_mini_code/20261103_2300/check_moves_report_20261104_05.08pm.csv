@@ -1,0 +1,26 @@
+file,expected,got,result,with_aliases,final_location
+AI NSWS Student Assistant JD.pdf,Unsorted,ESP3201A,WRONG,WRONG,Organised/ESP3201A/AI NSWS Student Assistant JD.pdf
+Cheatsheet.pdf,Unsorted,ESP3201A,WRONG,WRONG,Organised/ESP3201A/Cheatsheet.pdf
+assignment 5.py,CS1010E,CS2030DE,WRONG,WRONG,Organised/CS2030DE/assignment 5.py
+automata.jpg,Unsorted,ESP3201A,WRONG,WRONG,Organised/ESP3201A/automata.jpg
+chapt 1.pdf,Unsorted,ESP3201A,WRONG,WRONG,Organised/ESP3201A/chapt 1.pdf
+Agentic AI.pdf,ESP3201A,ESP3201A,correct,correct,Organised/ESP3201A/Agentic AI.pdf
+CA.pdf,ES1103,ES1103,correct,correct,Organised/ES1103/CA.pdf
+CA1 Synthesis Prompt.pdf,ES1103,ES1103,correct,correct,Organised/ES1103/CA1 Synthesis Prompt.pdf
+CS2030DE_Takehome5/CS2030DE_Lab5_Takehome.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/CS2030DE_Takehome5/CS2030DE_Lab5_Takehome.pdf
+Chapter 2 Data Encapsulation v1.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/Chapter 2 Data Encapsulation v1.pdf
+Chapter 3 Inheritance v4.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/Chapter 3 Inheritance v4.pdf
+Chapter 4 Interfaces v3 Part 2.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/Chapter 4 Interfaces v3 Part 2.pdf
+Chapter 4 Polymorphism v4 Part 1.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/Chapter 4 Polymorphism v4 Part 1.pdf
+Chapter1 Intro OOP v1.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/Chapter1 Intro OOP v1.pdf
+Copy_of_week06_video_world_model_colab.ipynb,ESP3201A,ESP3201A,correct,correct,Organised/ESP3201A/Copy_of_week06_video_world_model_colab.ipynb
+,,,,,
+OVERALL,,,10 of 15 scored files sorted correctly (67%),,
+WITH ALSO_ACCEPT,,,10 of 15 (67%),,
+FILES IN REPORT,,,"15 items, 15 with an answer, 0 without",,
+FOLDER STRUCTURE,,,kept for 15 of 15 items placed in a module folder,,
+BY MODULE CS1010E,,,0 of 1 correct,,
+BY MODULE CS2030DE,,,6 of 6 correct,,
+BY MODULE ES1103,,,2 of 2 correct,,
+BY MODULE ESP3201A,,,2 of 2 correct,,
+BY MODULE Unsorted,,,0 of 4 correct,,
