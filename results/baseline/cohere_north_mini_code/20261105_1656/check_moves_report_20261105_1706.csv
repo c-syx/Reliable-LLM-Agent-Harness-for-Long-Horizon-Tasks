@@ -1,0 +1,19 @@
+file,expected,got,result,with_aliases,final_location
+Edge-AI-Mini Assignment.pdf,ESP3201A,CS2030DE,WRONG,WRONG,Organised/CS2030DE/Edge-AI-Mini Assignment.pdf
+EdgeAI.pdf,ESP3201A,CS2030DE,WRONG,WRONG,Organised/CS2030DE/EdgeAI.pdf
+Group 6_Project Proposal.pdf,ESP3201A,CS2030DE,WRONG,WRONG,Organised/CS2030DE/Group 6_Project Proposal.pdf
+dfs_trap_algo_comaprison.png,ESP3201A,CS2030DE,WRONG,WRONG,Organised/CS2030DE/dfs_trap_algo_comaprison.png
+greedy_trap_algo_comaprison.png,ESP3201A,CS2030DE,WRONG,WRONG,Organised/CS2030DE/greedy_trap_algo_comaprison.png
+hiwonder_robot.png,Unsorted,CS2030DE,WRONG,WRONG,Organised/CS2030DE/hiwonder_robot.png
+CS2030DE Model Answer.docx,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/CS2030DE Model Answer.docx
+CS2030DE_In-lab5/CS2030DE_In-lab5_Encoders.pdf,CS2030DE,CS2030DE,correct,correct,Organised/CS2030DE/CS2030DE_In-lab5_Encoders.pdf
+Copy_of_week07_rl_colab.ipynb,ESP3201A,ESP3201A,correct,correct,Organised/ESP3201A/Copy_of_week07_rl_colab.ipynb
+Copy_of_week10b_agentic_security_colab_v6.ipynb,ESP3201A,ESP3201A,correct,correct,Organised/ESP3201A/Copy_of_week10b_agentic_security_colab_v6.ipynb
+,,,,,
+OVERALL,,,4 of 10 scored files sorted correctly (40%),,
+WITH ALSO_ACCEPT,,,4 of 10 (40%),,
+FILES IN REPORT,,,"10 items, 10 with an answer, 0 without",,
+FOLDER STRUCTURE,,,kept for 9 of 10 items placed in a module folder,,
+BY MODULE CS2030DE,,,2 of 2 correct,,
+BY MODULE ESP3201A,,,2 of 7 correct,,
+BY MODULE Unsorted,,,0 of 1 correct,,
