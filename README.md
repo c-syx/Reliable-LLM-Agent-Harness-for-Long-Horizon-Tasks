@@ -26,9 +26,11 @@ The `.env` file is ignored by git, so the key will not be uploaded. Never paste 
 
 3. Free models allow 50 requests a day on a new account. Adding at least 10 dollars of credit once raises that to 1000 a day. You do not have to spend the credit if you stay on free models.
 
-## Get your Google Drive files
+## Get test files
 
-Right click the ESP3201A Test Files folder in Google Drive and choose Download. Drive gives you a zip, sometimes several. Unzip everything into a folder called `test_files` inside the repo folder. Git ignores that folder, so personal files never get uploaded by accident.
+Put the files you want sorted into a folder called `test_files` inside the repo folder. Git ignores that folder, so personal files never get uploaded by accident.
+
+Our own test set is real student files and is not included in this repo for privacy reasons.
 
 ## Run it on real files
 
@@ -63,7 +65,7 @@ Open labels.csv and fill in the module column for each file, using the module co
 python organise.py --input test_files --output run2 --model cohere/north-mini-code:free --labels labels.csv
 ```
 
-It prints the accuracy and lists up to 15 wrong files. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
+It prints the accuracy and lists up to 15 wrong files. Keep labels.csv outside the repo, since file names may contain personal details.
 
 ### Checking a saved moves report
 
