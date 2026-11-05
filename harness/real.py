@@ -376,7 +376,7 @@ def run_organise(input_dir, output_dir, llm, max_steps: int = 250, labels: dict 
                 rows.append({"original": orig, "final_location": " | ".join(locs) or "MISSING",
                              "module_folder": ", ".join(mods) or "MISSING"})
             # The file name carries the time the report is written, for example moves_report_20261025_12.20pm.csv
-            stamp = datetime.now().strftime("%Y%m%d_%I.%M%p").lower()
+            stamp = datetime.now().strftime("%Y%m%d_%H%M")
             report_path = output_dir / f"moves_report_{stamp}.csv"
             status = "complete" if complete else "partial"
             with open(report_path, "w", newline="", encoding="utf-8") as fh:
