@@ -1,6 +1,6 @@
 # Reliable LLM agent harness for long horizon tasks (ESP3201A)
 
-An LLM agent that tidies a messy folder of student files. It reads each file, works out which module it belongs to, moves it into a folder for that module, and writes a log. The baseline agent is a plain tool loop with raw history. The verified agent adds deterministic action verification. The improved agent combines verification, folder structure handling and checkpointing so an interrupted run can be resumed.
+An LLM agent that tidies a messy folder of student files. It reads each file, works out which module it belongs to, moves it into a folder for that module, and writes a log. The baseline agent is a plain tool loop with raw history. The verified agent adds deterministic action verification. The improved agent combines verification, folder structure handling, a sibling similarity check and checkpointing so an interrupted run can be resumed.
 
 By default there is nothing hard coded about modules. No module list, no topic to module mapping and no file name rules are given to the agent. The optional timetable (see below) gives it a list of module codes to expect, but it still has to read the contents of each file (PDF, Word, PowerPoint, Excel, notebooks, code and text) to decide. Your original files are never changed, because the agent works on a copy.
 
@@ -63,7 +63,20 @@ Open labels.csv and fill in the module column for each file, using the module co
 python organise.py --input test_files --output run2 --model cohere/north-mini-code:free --labels labels.csv
 ```
 
-It prints the accuracy and lists every wrong file. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
+It prints the accuracy and lists up to 15 wrong files. Keep labels.csv in your shared Drive folder rather than the repo, since file names may contain personal details.
+
+### Checking a saved moves report
+
+`check_moves.py` scores a `moves_report_*.csv` after a run. Pass either the run folder or the report file:
+
+```
+python check_moves.py results/cohere_north_mini_code answer.csv
+python check_moves.py results/cohere_north_mini_code/moves_report_20261026_12.10pm.csv answer.csv
+```
+
+The answer key uses the same `file,module` columns, plus an optional third column, `also_accept`, that holds one extra module code that is also acceptable for that row. A blank value means no alternative. The strict result does not change. When any row has an `also_accept` code, a second `with_aliases` score is printed and saved. The checker also treats each top-level folder in the report as one item, so files inside a folder are not counted separately. It writes `check_<report name>.csv` next to the report.
+
+Unlike `organise.py --labels`, this runs on a saved report and supports `also_accept`. The labels template made by `organise.py --make-labels` only contains `file,module`; add the third column by hand if you want to use it with `check_moves.py`.
 
 ## Using your timetable
 
@@ -79,7 +92,7 @@ What happens
 1. The model reads the timetable once and lists the modules in it. Every code it returns is checked against the timetable text, so an invented module is dropped.
 2. The list is saved to `module_registry.json`. Open it and check it looks right. This is the agent's memory of your modules.
 3. The list goes into the agent's instructions. For a file with no module code, the agent picks the most likely module from the list using the topic and the neighbouring files. It only uses Unsorted for non coursework or files that fit nothing.
-4. Next time, pass `--timetable module_registry.json` and the extraction step is skipped, which saves a request.
+4. Next time, pass `--timetable module_registry.json` and the extraction step is skipped when the saved list still matches the current timetable, which saves a request. If the timetable has changed, the list is rebuilt.
 
 The agent's own log now says stated or inferred for each file, so you can see which choices were written in the file and which were guessed. The run summary also shows how many files are unsorted and whether the agent made folders that are not on the timetable.
 
@@ -93,7 +106,7 @@ python make_registry.py timetable_s1.ics timetable_s2.pdf --out module_registry.
 
 Open the result and check the codes. The pattern can pick up things that look like module codes but are not.
 
-module_registry.json and timetable files are gitignored because they can contain personal details, so they stay on your computer.
+module_registry.json is gitignored. The suggested timetable names `timetable.ics` and `timetable.pdf` are also gitignored. Other timetable names or formats are not ignored, so keep them outside the repo or add them to `.gitignore` yourself, because they can contain personal details.
 
 ## Models tried
 
@@ -107,7 +120,7 @@ The baseline and verified agents have six tools: list_dir, read_file, make_dir, 
 
 - `--agent baseline` is the plain loop with no checks or recovery.
 - `--agent verified` snapshots actions and checks that a move really happened without changing the file's content, and that make_dir and write_file left what they claimed.
-- `--agent improved` does everything the verified agent does, keeps subfolder structure with move_folder, and saves a checkpoint after every step.
+- `--agent improved` does everything the verified agent does, keeps subfolder structure with move_folder, applies a sibling similarity check before moves, and saves a checkpoint after every step.
 
 Use the improved agent for long real runs:
 
@@ -131,11 +144,13 @@ The first line is a dry run with no API key. Results are saved as JSON per run, 
 ## Layout
 
 - organise.py, the command line tool for real folders
+- check_moves.py, the offline checker for a saved moves report
 - run_experiment.py, the generated benchmark runner
 - harness/agent.py, the shared tool loop and hooks
 - harness/verified_agent.py and harness/verifier.py, deterministic action verification
-- harness/improved.py, verification plus folder handling and checkpointing
+- harness/improved.py, verification plus folder handling, sibling checking and checkpointing
 - harness/folder_check.py, the subfolder-structure check
+- harness/sibling_check.py, the text-similarity second look before a move
 - harness/checkpoint.py, atomic save and load for resumable runs
 - harness/real.py, the real mode prompt, export and scoring
 - harness/readers.py, text extraction for each file type
